@@ -1,0 +1,4 @@
+Benchmark done on GPU at 18:19, 2018-04-22
+Parameter checked is batch_size
+
+05:15:30      Combinations tried: 1/7     Elapsed time: 656min     Time remaining: 3937min.
