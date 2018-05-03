@@ -1,2 +1,6 @@
 probably_trash/
 .viminfo
+.bash*
+.ipy*
+.local/
+*.txt
