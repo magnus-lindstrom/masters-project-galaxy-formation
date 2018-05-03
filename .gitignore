@@ -4,3 +4,11 @@ probably_trash/
 .ipy*
 .local/
 *.txt
+.cache/
+.config/
+.jupyter/
+.keras/
+.nv/
+.profile
+.ssh/
+.wget-hsts
