@@ -1,8 +1,0 @@
-Benchmark done on GPU at 09:39, 2018-04-24
-Parameter checked is neurons_per_layer
-
-09:40:34      Combinations tried: 1/5     Elapsed time: 0min     Time remaining: 3min.
-09:41:29      Combinations tried: 2/5     Elapsed time: 1min     Time remaining: 2min.
-09:42:26      Combinations tried: 3/5     Elapsed time: 2min     Time remaining: 1min.
-09:43:56      Combinations tried: 4/5     Elapsed time: 4min     Time remaining: 1min.
-09:47:15      Combinations tried: 5/5     Elapsed time: 7min     Time remaining: 0min.

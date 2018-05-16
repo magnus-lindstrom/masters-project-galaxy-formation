@@ -17,3 +17,5 @@ probably_trash/
 modules/__pycache__/
 code/useful_code/backprop_trained_networks/old_code/
 code/useful_code/backprop_trained_networks/.ipynb_checkpoints/
+etc/
+*.png

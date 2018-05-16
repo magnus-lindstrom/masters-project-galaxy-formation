@@ -1,7 +1,0 @@
-Benchmark done on CPU at 17:40, 2018-04-22
-Parameter checked is batch_size
-
-17:42:07      Combinations tried: 1/4     Elapsed time: 2min     Time remaining: 6min.
-17:42:50      Combinations tried: 2/4     Elapsed time: 2min     Time remaining: 2min.
-17:43:12      Combinations tried: 3/4     Elapsed time: 3min     Time remaining: 1min.
-17:43:27      Combinations tried: 4/4     Elapsed time: 3min     Time remaining: 0min.
