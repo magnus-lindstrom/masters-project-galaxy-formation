@@ -3,10 +3,15 @@ import time
 import datetime
 import math
 
-def get_density_periodic(coordinates, weights, nr_neighbours, box_sides, nr_points, verbatim=False, progress_file=False):
+def get_density_periodic(coordinates, weights, nr_neighbours, box_sides, nr_points, verbatim=False, progress_file=False,
+                         get_neighbours=False):
 
     # Returns the mass densities in a sphere surrounding points. 
     # The spheres extend far enough to enclose the nr of neighbours specified.
+    
+    if get_neighbours:
+        neigh_indices = []
+        neigh_masses = []
  
     with open('results.txt', 'w+') as f:
 
@@ -47,10 +52,18 @@ def get_density_periodic(coordinates, weights, nr_neighbours, box_sides, nr_poin
             density =  np.sum(masses_of_k_closest_neighbours) / sphere_volume
             neigh_densities[i] = density
             
+            if get_neighbours:
+                neigh_indices.append(indices_of_k_closest_neighbours)
+                neigh_masses.append(masses_of_k_closest_neighbours)
+            
         end = time.time()
         elapsed_time = (end-start)/60
         time_remaining = elapsed_time / i * (nr_points - i)
         if progress_file:
             f.write('%s      Script finished. Elapsed time: %.2fmin.' % (datetime.datetime.now().strftime("%H:%M:%S"), elapsed_time))
+            
+    if get_neighbours:
+        return neigh_densities, neigh_indices, neigh_masses
     
-    return neigh_densities
+    else:
+        return neigh_densities
