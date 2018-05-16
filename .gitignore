@@ -1,4 +1,3 @@
-probably_trash/
 .viminfo
 .bash*
 .ipy*
@@ -14,8 +13,8 @@ probably_trash/
 .wget-hsts
 .conda/
 *.swp
-modules/__pycache__/
-code/useful_code/backprop_trained_networks/old_code/
-code/useful_code/backprop_trained_networks/.ipynb_checkpoints/
+modules/__pycache_/
+*.ipynb_checkpoints/
 etc/
 *.png
+*.pyc
