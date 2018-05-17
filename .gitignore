@@ -18,3 +18,4 @@ modules/__pycache_/
 etc/
 *.png
 *.pyc
+.vim*

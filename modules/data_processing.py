@@ -6,7 +6,7 @@ def weighted_mse_1(y_true, y_pred):
     
     return K.mean(K.log(y_true+1.5) + K.square(y_pred - y_true), axis=-1)
 
-def load_galfile(galfile_directory='/home/magnus/code/useful_code/special_functions/test_galcat_w_log_densities_3e5.h5'):
+def load_galfile(galfile_directory='/home/magnus/code/special_functions/test_galcat_w_log_densities_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'
     galfile = pd.read_hdf(galfile_directory)
     galaxies = galfile.as_matrix()
@@ -44,24 +44,34 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, tota
     y_train = np.zeros((len(train_indices), len(output_features)))
     y_val = np.zeros((len(val_indices), len(output_features)))
     y_test = np.zeros((len(test_indices), len(output_features)))
-
+    x_data_keys = {}
+    y_data_keys = {}
+    
     for i in range(len(input_features)):
         x_train[:,i] = galaxies[train_indices, data_keys[input_features[i]]]
         x_val[:,i] = galaxies[val_indices, data_keys[input_features[i]]]
         x_test[:,i] = galaxies[test_indices, data_keys[input_features[i]]]
+
+        x_data_keys[input_features[i]] = i
 
     for i in range(len(output_features)):
         y_train[:,i] = galaxies[train_indices, data_keys[output_features[i]]]
         y_val[:,i] = galaxies[val_indices, data_keys[output_features[i]]]
         y_test[:,i] = galaxies[test_indices, data_keys[output_features[i]]]
         
+        y_data_keys[output_features[i]] = i
+
     training_data_dict = {
+        'output_features': output_features,
+        'input_features': input_features,
         'x_train': x_train,
         'x_val': x_val,
         'x_test': x_test,
         'y_train': y_train,
         'y_val': y_val,
-        'y_test': y_test        
+        'y_test': y_test,
+        'x_data_keys': x_data_keys,
+        'y_data_keys': y_data_keys
     }
     
     return training_data_dict
@@ -157,21 +167,7 @@ def normalise_data(training_data_dict, norm):
 def get_test_score(model, training_data_dict, norm):
     ### Get the MSE for the test predictions in the original units of the dataset
     
-    if norm == 'zero_mean_unit_std':
-        predicted_norm_points = model.predict(training_data_dict['x_test_norm'])
-        predicted_points = predicted_norm_points * training_data_dict['y_data_stds'] + training_data_dict['y_data_means']
-
-    elif norm == 'zero_to_one':
-        predicted_norm_points = model.predict(training_data_dict['x_test_norm'])
-        predicted_points = predicted_norm_points * \
-                            (training_data_dict['y_data_max'] - training_data_dict['y_data_min']) + \
-                            training_data_dict['y_data_min']
-
-    elif norm == 'none':
-        predicted_points = model.predict(training_data_dict['x_test'])
-
-    else:
-        print('Incorrect normalisation provided: ' + norm)
+    predicted_points = predict_test_points(training_data_dict)   
 
     ### Get mse for the real predictions
     n_points, n_outputs = np.shape(predicted_points)
@@ -181,3 +177,19 @@ def get_test_score(model, training_data_dict, norm):
     test_score = np.sum(feature_scores) / n_outputs
     
     return test_score
+
+
+def predict_test_points(model, training_data_dict):
+
+    if training_data_dict['norm'] == 'zero_mean_unit':
+        predicted_norm_points = model.predict(training_data_dict['x_test_norm'])
+        predicted_points = predicted_norm_points * training_data_dict['y_data_stds'] + training_data_dict['y_data_means']
+
+    elif training_data_dict['norm'] == 'zero_to_one':
+        predicted_norm_points = model.predict(training_data_dict['x_test_norm'])
+        predicted_points = predicted_norm_points * (training_data_dict['y_data_max'] - training_data_dict['y_data_min']) + \
+                            training_data_dict['y_data_min']
+    elif training_data_dict['norm'] == 'none':
+        predicted_points = model.predict(training_data_dict['x_test'])
+        
+    return predicted_points
