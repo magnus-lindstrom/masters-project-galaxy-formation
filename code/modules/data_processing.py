@@ -3,26 +3,36 @@ import numpy as np
 from keras import backend as K
 import tensorflow as tf
 
-def weighted_mse_1(y_true, y_pred):
+def log_weighted_mse(y_true, y_pred):
     
     return K.mean(K.log(y_true+1.5) + K.square(y_pred - y_true), axis=-1)
 
+def normal_weighted_mse(y_true, y_pred):
+    
+    square = K.square(y_pred - y_true)
+    weighted_square = y_true * square / K.sum(y_true)
+    
+    return K.mean(weighted_square, axis=-1)
+
 def stellar_mass_weighted_mse(y_true, y_pred):
-    ### Stellar mass has to be the first output for this to work
-    #galaxies, data_keys, unit_dict = load_galfile()
-    true_stellar_masses = K.ones(shape=K.shape(y_pred).shape)
-    #true_stellar_masses = K.zeros(K.shape(y_true))
-    print(true_stellar_masses)
-    mask_shape = tf.shape(y_true)[:0]
-    print(mask_shape)
-    #print(tf.shape(y_true))
-    for i_col in range(2):
-        tf.assign(true_stellar_masses, np.power(10, y_true[:, 0]))
-#    true_stellar_masses = K.concatenate([true_stellar_masses, true_stellar_masses], axis=0)
+    
+    true_stellar_masses = tf.pow(K.cast(10, 'float32'), y_true)
     square = K.square(y_pred - y_true)
     weighted_square = true_stellar_masses * square / K.sum(true_stellar_masses)
     
     return K.mean(weighted_square, axis=-1)
+
+def halo_mass_weighted_loss_wrapper(halo_masses):
+    def halo_mass_weighted_loss(y_true, y_pred):
+        
+        #true_halo_masses = halo_masses / 10
+        
+        #true_halo_masses = tf.pow(K.cast(10, 'float32'), true_halo_masses)
+        squared_diffs = K.square(y_pred - y_true)
+        weighted_square = halo_masses * squared_diffs / K.sum(halo_masses)
+        
+        return K.mean(weighted_square, axis=-1)
+    return halo_mass_weighted_loss
 
 
 def load_galfile(galfile_directory='/home/magnus/code/special_functions/test_galcat_w_log_densities_3e5.h5'):
@@ -122,9 +132,17 @@ def normalise_data(training_data_dict, norm):
         
         training_data_dict['norm'] = norm
         
-        input_train_dict['main_input'] = x_train
-        input_val_dict['main_input'] = x_val
-        input_test_dict['main_input'] = x_test
+        input_train_dict['halo_mass_input'] = x_train[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_val_dict['halo_mass_input'] = x_val[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_test_dict['halo_mass_input'] = x_test[:,training_data_dict['x_data_keys']['Halo_mass']]
+        
+        x_train = np.delete(x_train, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_val = np.delete(x_val, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_test = np.delete(x_test, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        
+        input_train_dict['others_input'] = x_train
+        input_val_dict['others_input'] = x_val
+        input_test_dict['others_input'] = x_test
         
         for i_feat, feat in enumerate(training_data_dict['output_features']):
             output_train_dict[feat] = y_train[:, i_feat]
@@ -141,9 +159,17 @@ def normalise_data(training_data_dict, norm):
         x_val_norm = (x_val - x_data_means) / x_data_stds
         x_test_norm = (x_test - x_data_means) / x_data_stds
         
-        input_train_dict['main_input'] = x_train_norm 
-        input_val_dict['main_input'] = x_val_norm 
-        input_test_dict['main_input'] = x_test_norm 
+        input_train_dict['halo_mass_input'] = x_train_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_val_dict['halo_mass_input'] = x_val_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_test_dict['halo_mass_input'] = x_test_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        
+        x_train_norm = np.delete(x_train_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_val_norm = np.delete(x_val_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_test_norm = np.delete(x_test_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        
+        input_train_dict['others_input'] = x_train_norm
+        input_val_dict['others_input'] = x_val_norm
+        input_test_dict['others_input'] = x_test_norm
             
         #for i in range(np.size(y_train, 1)):
         y_data_means = np.mean(y_train, 0)
@@ -164,19 +190,9 @@ def normalise_data(training_data_dict, norm):
         training_data_dict['x_data_stds'] = x_data_stds
         training_data_dict['y_data_means'] = y_data_means
         training_data_dict['y_data_stds'] = y_data_stds
-        
-        #training_data_dict['x_train_norm'] = x_train_norm
-        #training_data_dict['x_val_norm'] = x_val_norm
-        #training_data_dict['x_test_norm'] = x_test_norm
-        #training_data_dict['y_train_norm'] = y_train_norm
-        #training_data_dict['y_val_norm'] = y_val_norm
-        #training_data_dict['y_test_norm'] = y_test_norm
-        
-
 
     elif norm == 'zero_to_one':
 
-        #for i in range(np.size(x_train, 1)):
         x_data_max = np.max(x_train, 0)
         x_data_min = np.min(x_train, 0)
 
@@ -184,11 +200,18 @@ def normalise_data(training_data_dict, norm):
         x_val_norm = (x_val - x_data_min) / (x_data_max - x_data_min)
         x_test_norm = (x_test - x_data_min) / (x_data_max - x_data_min)
         
-        input_train_dict['main_input'] = x_train_norm 
-        input_val_dict['main_input'] = x_val_norm 
-        input_test_dict['main_input'] = x_test_norm 
+        input_train_dict['halo_mass_input'] = x_train_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_val_dict['halo_mass_input'] = x_val_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_test_dict['halo_mass_input'] = x_test_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        
+        x_train_norm = np.delete(x_train_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_val_norm = np.delete(x_val_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        x_test_norm = np.delete(x_test_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
+        
+        input_train_dict['others_input'] = x_train_norm
+        input_val_dict['others_input'] = x_val_norm
+        input_test_dict['others_input'] = x_test_norm
 
-        #for i in range(np.size(y_train, 1)):
         y_data_max = np.max(y_train, 0)
         y_data_min = np.min(y_train, 0)
 
@@ -207,13 +230,6 @@ def normalise_data(training_data_dict, norm):
         training_data_dict['x_data_min'] = x_data_min
         training_data_dict['y_data_max'] = y_data_max
         training_data_dict['y_data_min'] = y_data_min
-        
-        #training_data_dict['x_train_norm'] = x_train_norm
-        #training_data_dict['x_val_norm'] = x_val_norm
-        #training_data_dict['x_test_norm'] = x_test_norm
-        #training_data_dict['y_train_norm'] = y_train_norm
-        #training_data_dict['y_val_norm'] = y_val_norm
-        #training_data_dict['y_test_norm'] = y_test_norm
        
     else:
         print('Incorrect norm provided: ', norm)    
