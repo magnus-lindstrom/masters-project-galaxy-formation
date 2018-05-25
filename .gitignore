@@ -19,3 +19,4 @@ etc/
 *.png
 *.pyc
 .vim*
+*__pycache___

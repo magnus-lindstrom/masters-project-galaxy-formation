@@ -35,23 +35,25 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
 def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, nBins=8, title=None):
     
     if not predicted_feat in training_data_dict['output_features']:
-        print('That output feature is not available. Choose between\n%s' % 
-              (', '.join(training_data_dict['output_features'])))
+        print('Predicted feature not available (%s). Choose between\n%s' % 
+              (predicted_feat, ', '.join(training_data_dict['output_features'])))
         return 
-    if binning_feat in training_data_dict['output_features']:
-        binning_feature_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][binning_feat]]
-        
-    elif binning_feat in training_data_dict['input_features']:
-        binning_feature_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][binning_feat]]
-        
-    else:   
-        print('That binning feature is not available. Choose between\n%s' % 
-              (', '.join(training_data_dict['output_features']) + '\nand\n' + 
-               ', '.join(training_data_dict['input_features'])))
-        return 
+#    if binning_feat in training_data_dict['output_features']:
+#        binning_feature_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][binning_feat]]
+#        
+#    elif binning_feat in training_data_dict['input_features']:
+#        binning_feature_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][binning_feat]]
+#        
+#    else:   
+#        print('Predicted feature is not available. Choose between\n%s' % 
+#              (', '.join(training_data_dict['output_features']) + '\nand\n' + 
+#               ', '.join(training_data_dict['input_features'])))
+#        return 
     
     predicted_points = predict_test_points(model, training_data_dict)
     
+    binning_feature_data = training_data_dict['original_data'][training_data_dict['test_indices'], 
+                                                              training_data_dict['original_data_keys'][binning_feat]]
     binned_feat_min_value = np.amin(binning_feature_data)
     binned_feat_max_value = np.amax(binning_feature_data)
     bin_edges = np.linspace(binned_feat_min_value, binned_feat_max_value, nBins+1)
@@ -116,58 +118,81 @@ def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_fe
     ### features. If either the x or y feature is an input feature, and thus has no predicted feature, the left
     ### subplot will instead contain the true values for that feature.
 
-    if not x_axis_feature in (training_data_dict['output_features'] + training_data_dict['input_features']):
-        print('That x feature is not available. Choose between\n%s' %
-              (', '.join(training_data_dict['output_features']) + '\nand\n' +
-               ', '.join(training_data_dict['input_features'])))
-        return
-    if not y_axis_feature in (training_data_dict['output_features'] + training_data_dict['input_features']):
-        print('That y feature is not available. Choose between\n%s' %
-              (', '.join(training_data_dict['output_features']) + '\nand\n' +
-               ', '.join(training_data_dict['input_features'])))
-        return
+    #if not x_axis_feature in (training_data_dict['output_features'] + training_data_dict['input_features']):
+    #    print('That x feature is not available. Choose between\n%s' %
+    #          (', '.join(training_data_dict['output_features']) + '\nand\n' +
+    #           ', '.join(training_data_dict['input_features'])))
+    #    return
+    #if not y_axis_feature in (training_data_dict['output_features'] + training_data_dict['input_features']):
+    #    print('That y feature is not available. Choose between\n%s' %
+    #          (', '.join(training_data_dict['output_features']) + '\nand\n' +
+    #           ', '.join(training_data_dict['input_features'])))
+    #    return
 
     predicted_points = predict_test_points(model, training_data_dict)
 
+    #if x_axis_feature in training_data_dict['output_features']:
+    #    left_x_data = predicted_points[:,training_data_dict['y_data_keys'][x_axis_feature]]
+    #    right_x_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][x_axis_feature]]
+    #    left_x_label = 'Predicted %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    #    right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+
+    #elif x_axis_feature in training_data_dict['input_features']:
+    #    left_x_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][x_axis_feature]]
+    #    right_x_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][x_axis_feature]]
+    #    left_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    #    right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+
+    #if y_axis_feature in training_data_dict['output_features']:
+    #    left_y_data = predicted_points[:,training_data_dict['y_data_keys'][y_axis_feature]]
+    #    right_y_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][y_axis_feature]]
+    #    left_y_label = 'Predicted %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
+    #    right_y_label = 'True %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
+
+    #elif y_axis_feature in training_data_dict['input_features']:
+    #    left_y_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][y_axis_feature]]
+    #    right_y_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][y_axis_feature]]
+    #    left_y_label = 'True %s %s' % (y_axis_feature, unit_dict[x_axis_feature])
+    #    right_y_label = 'True %s %s' % (y_axis_feature, unit_dict[x_axis_feature])
+        
+    true_x_data = training_data_dict['original_data'][training_data_dict['test_indices'], 
+                                                              training_data_dict['original_data_keys'][x_axis_feature]]
+    true_y_data = training_data_dict['original_data'][training_data_dict['test_indices'], 
+                                                              training_data_dict['original_data_keys'][y_axis_feature]]
+    true_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    true_y_label = 'True %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
     if x_axis_feature in training_data_dict['output_features']:
-        left_x_data = predicted_points[:,training_data_dict['y_data_keys'][x_axis_feature]]
-        right_x_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][x_axis_feature]]
-        left_x_label = 'Predicted %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
-        right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
-
-    elif x_axis_feature in training_data_dict['input_features']:
-        left_x_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][x_axis_feature]]
-        right_x_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][x_axis_feature]]
-        left_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
-        right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
-
+        predicted_x_data = predicted_points[:,training_data_dict['y_data_keys'][x_axis_feature]]
+        #right_x_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][x_axis_feature]]
+        predicted_x_label = 'Predicted %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+        #right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    else:
+        predicted_x_data = true_x_data
+        predicted_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+        
     if y_axis_feature in training_data_dict['output_features']:
-        left_y_data = predicted_points[:,training_data_dict['y_data_keys'][y_axis_feature]]
-        right_y_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][y_axis_feature]]
-        left_y_label = 'Predicted %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
-        right_y_label = 'True %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
-
-    elif y_axis_feature in training_data_dict['input_features']:
-        left_y_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][y_axis_feature]]
-        right_y_data = training_data_dict['x_test'][:,training_data_dict['x_data_keys'][y_axis_feature]]
-        left_y_label = 'True %s %s' % (y_axis_feature, unit_dict[x_axis_feature])
-        right_y_label = 'True %s %s' % (y_axis_feature, unit_dict[x_axis_feature])
-
+        predicted_y_data = predicted_points[:,training_data_dict['y_data_keys'][y_axis_feature]]
+        #right_x_data = training_data_dict['y_test'][:,training_data_dict['y_data_keys'][x_axis_feature]]
+        predicted_y_label = 'Predicted %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
+        #right_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    else:
+        predicted_y_data = true_y_data
+        predicted_y_label = 'True %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
 
     fig = plt.figure(figsize=(12,8))
     ax1 = plt.subplot(121)
 
-    plt.plot(left_x_data, left_y_data, 'r.', markersize=2)
-    plt.xlabel(left_x_label, fontsize=15)
-    plt.ylabel(left_y_label, fontsize=15)
+    plt.plot(predicted_x_data, predicted_y_data, 'r.', markersize=2)
+    plt.xlabel(predicted_x_label, fontsize=15)
+    plt.ylabel(predicted_y_label, fontsize=15)
     xmin_1, xmax_1 = ax1.get_xlim()
     ymin_1, ymax_1 = ax1.get_ylim()
 
 
     ax2 = plt.subplot(122)
-    plt.plot(right_x_data, right_y_data, 'b.', markersize=2)
-    plt.xlabel(right_x_label, fontsize=15)
-    plt.ylabel(right_y_label, fontsize=15)
+    plt.plot(true_x_data, true_y_data, 'b.', markersize=2)
+    plt.xlabel(true_x_label, fontsize=15)
+    plt.ylabel(true_y_label, fontsize=15)
     xmin_2, xmax_2 = ax2.get_xlim()
     ymin_2, ymax_2 = ax2.get_ylim()
     
@@ -215,7 +240,7 @@ def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_fe
         ax1.set_xlim(right=x_max)
         ax2.set_xlim(right=x_max) 
     if title is not None:
-        plt.suptitle(title, y=1.03, fontsize=20)
+        plt.suptitle(title, y=1.1, fontsize=20)
 
     plt.tight_layout()
 
