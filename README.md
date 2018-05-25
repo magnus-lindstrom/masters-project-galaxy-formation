@@ -1,7 +1,6 @@
 # Overview
 ### Directory structure
 **root**
-  - **etc** -- Old implementations, notebooks, stuff I'm not ready to throw away yet
   - **code**
     - **backpropagation_code**
       - general_purpose_notebook.ipynb 
