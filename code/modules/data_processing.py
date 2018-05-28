@@ -27,9 +27,9 @@ def halo_mass_weighted_loss_wrapper(halo_masses):
         
         #true_halo_masses = halo_masses / 10
         
-        #true_halo_masses = tf.pow(K.cast(10, 'float32'), true_halo_masses)
+        true_halo_masses = tf.pow(K.cast(10, 'float32'), halo_masses)
         squared_diffs = K.square(y_pred - y_true)
-        weighted_square = halo_masses * squared_diffs / K.sum(halo_masses)
+        weighted_square = true_halo_masses * squared_diffs / K.sum(true_halo_masses)
         
         return K.mean(weighted_square, axis=-1)
     return halo_mass_weighted_loss
@@ -248,7 +248,7 @@ def normalise_data(training_data_dict, norm):
 def get_test_score(model, training_data_dict, norm):
     ### Get the MSE for the test predictions in the original units of the dataset
     
-    predicted_points = predict_test_points(training_data_dict)
+    predicted_points = predict_points(training_data_dict, data_type = 'test')
 
     ### Get mse for the real predictions
     
@@ -261,9 +261,16 @@ def get_test_score(model, training_data_dict, norm):
     return test_score
 
 
-def predict_test_points(model, training_data_dict):
+def predict_points(model, training_data_dict, data_type='test'):
 
-    predicted_norm_points = model.predict(training_data_dict['input_test_dict'])
+    if data_type == 'test':
+        predicted_norm_points = model.predict(training_data_dict['input_test_dict'])
+    elif data_type == 'train':
+        predicted_norm_points = model.predict(training_data_dict['input_train_dict'])
+    elif data_type == 'val':
+        predicted_norm_points = model.predict(training_data_dict['input_val_dict'])
+    else:
+        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
     predicted_points = []
     if training_data_dict['norm'] == 'zero_mean_unit':
         for i in range(len(training_data_dict['output_features'])):
