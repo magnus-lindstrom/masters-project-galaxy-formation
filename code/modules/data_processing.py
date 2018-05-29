@@ -3,37 +3,6 @@ import numpy as np
 from keras import backend as K
 import tensorflow as tf
 
-def log_weighted_mse(y_true, y_pred):
-    
-    return K.mean(K.log(y_true+1.5) + K.square(y_pred - y_true), axis=-1)
-
-def normal_weighted_mse(y_true, y_pred):
-    
-    square = K.square(y_pred - y_true)
-    weighted_square = y_true * square / K.sum(y_true)
-    
-    return K.mean(weighted_square, axis=-1)
-
-def stellar_mass_weighted_mse(y_true, y_pred):
-    
-    true_stellar_masses = tf.pow(K.cast(10, 'float32'), y_true)
-    square = K.square(y_pred - y_true)
-    weighted_square = true_stellar_masses * square / K.sum(true_stellar_masses)
-    
-    return K.mean(weighted_square, axis=-1)
-
-def halo_mass_weighted_loss_wrapper(halo_masses):
-    def halo_mass_weighted_loss(y_true, y_pred):
-        
-        #true_halo_masses = halo_masses / 10
-        
-        true_halo_masses = tf.pow(K.cast(10, 'float32'), halo_masses)
-        squared_diffs = K.square(y_pred - y_true)
-        weighted_square = true_halo_masses * squared_diffs / K.sum(true_halo_masses)
-        
-        return K.mean(weighted_square, axis=-1)
-    return halo_mass_weighted_loss
-
 
 def load_galfile(galfile_directory='/home/magnus/code/special_functions/test_galcat_w_log_densities_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'

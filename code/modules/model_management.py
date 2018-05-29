@@ -9,7 +9,6 @@ model_path = home_dir + '/models/'
 from os import listdir
 from os.path import isfile, join
 from keras.models import load_model
-from custom_keras_objects import get_custom_objects
 import datetime
     
 #def id_generator(size=10, chars=string.ascii_uppercase + string.digits):
