@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import datetime
 from keras.models import Sequential
 from keras.layers import Dense
 
@@ -89,13 +90,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         if loss_function == 'halo_mass_weighted_loss':
         
-            self.train_weights = training_data_dict['x_train'][:, training_data_dict['x_data_keys']['Halo_mass']]
-            self.val_weights = training_data_dict['x_val'][:, training_data_dict['x_data_keys']['Halo_mass']]
-            self.test_weights = training_data_dict['x_test'][:, training_data_dict['x_data_keys']['Halo_mass']]
+            self.real_halo_masses = {}
+            log_halo_masses = training_data_dict['x_train'][:, training_data_dict['x_data_keys']['Halo_mass']]
+            self.real_halo_masses['train'] = np.power(10, log_halo_masses)
+            log_halo_masses = training_data_dict['x_val'][:, training_data_dict['x_data_keys']['Halo_mass']]
+            self.real_halo_masses['val'] = np.power(10, log_halo_masses)
+            log_halo_masses = training_data_dict['x_test'][:, training_data_dict['x_data_keys']['Halo_mass']]
+            self.real_halo_masses['test'] = np.power(10, log_halo_masses)
 
+        self.training_data_dict = training_data_dict
+        self.loss_function = loss_function
         self.nr_iterations_trained = nr_iterations
-        self.nr_train_points_used = np.size(x_train, 0)
-        self.nr_val_points_used = np.size(x_val, 0)
         
         with open('progress.txt', 'w+') as f:
 
@@ -127,7 +132,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         if nr_iters_before_restart_check is not None:
                             if (iteration - lastTimeSwarmBest) > nr_iters_before_restart_check:
                                 self.set_weights(self.best_weights)
-                                y_pred = self.predict_output(x_val_norm)
+                                y_pred = self.predict_output('val')
 
                                 stds = np.std(y_pred, axis=0)
                                 print('standard deviations of predicted parameters: ', stds)
@@ -139,7 +144,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         elapsed_so_far = (progress_end - glob_start) / 60
                         time_remaining = elapsed_so_far / iteration * (self.nr_iterations_trained - iteration)
 
-                        print('Iteration %d' % (iteration))
+                        print('%s, Iteration %d' % (datetime.datetime.now().strftime("%H:%M:%S"), iteration))
                         f.write('%s      ' % (datetime.datetime.now().strftime("%H:%M:%S")))
                         f.write('Iterations tried: %d/%d     ' % (iteration, self.nr_iterations_trained))
                         f.write('Elapsed time: %dmin     ' % (elapsed_so_far))
@@ -148,7 +153,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                     for iParticle, particle in enumerate(self.particle_list):
                         
-                        train_score = particle.evaluate_particle(x_train, y_train)
+                        train_score = particle.evaluate_particle('train')
 
                         is_swarm_best_train = (train_score < self.swarm_best_train)
                         
@@ -159,18 +164,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                             self.swarm_best_train = train_score
                             self.swarm_best_position = particle.position
                             
-                            val_score = particle.evaluate_particle(x_val, y_val)
+                            val_score = particle.evaluate_particle('val')
                             is_swarm_best_val = (val_score < self.swarm_best_val)
                             if is_swarm_best_val: # only update best weights after val highscore
                                 self.best_weights = particle.get_weights()
                             
-                            
                             self.validationScoreHistory.append(val_score)
                             self.trainingScoreHistory.append(train_score)
 
-                            print('Iteration %d, particle %d, new swarm best. Train: %.3f, Val: %.3f' % (iteration, 
+                            print('Iteration %d, particle %d, new swarm best. Train: %.3e, Val: %.3e' % (iteration, 
                                                             iParticle, train_score, val_score))
-                            f.write('Iteration %d, particle %d, new swarm best. Train: %.3f, Val: %.3f\n' % (iteration, 
+                            f.write('Iteration %d, particle %d, new swarm best. Train: %.3e, Val: %.3e\n' % (iteration, 
                                                             iParticle, train_score, val_score))
                             f.flush()
 
@@ -183,6 +187,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
 
         end = time.time()
+        print('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
+        f.write('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
+        f.flush()
         
     def update_inertia_weight(self, inertia_weight, inertia_weight_reduction, iteration, f):
         
@@ -196,9 +203,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.flush()
         return inertia_weight
         
-    def predict_output(self, x_data):
+    def predict_output(self, mode):
     
-        y_pred = self.model.predict(x_data)  # always contains the best model so far
+        y_pred = self.model.predict(self.training_data_dict['x_'+mode])
 
         return y_pred
     
@@ -259,16 +266,37 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         for i in range(len(weightMatrixList)):
             self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
             
+    def set_best_weights(self):
+        weightMatrixList = self.best_weights[0]
+        biasList = self.best_weights[1]
+        for i in range(len(weightMatrixList)):
+            self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
             
-    def evaluate_model(self, x_data, y_data):
-        
-        if parent.loss_function == 'mse':
-            score = self.model.evaluate(x_data, y_data, verbose=0)
             
-        elif self.loss_function == 'weighted_loss':
-            y_pred = self.model.predict(x_data)
-            square = np.power(y_pred - y_data, 2)
-            weighted_square = 
+    def evaluate_model(self, mode):
+    
+        y_pred = self.model.predict(self.training_data_dict['x_'+mode])
+    
+        if self.loss_function == 'mse':
+            n_points, n_outputs = np.shape(y_pred)
+            diff = y_pred - self.training_data_dict['y_'+mode]
+            square = np.power(diff, 2)
+            feature_scores = np.sum(square, 0) / n_points
+            score = np.sum(feature_scores)
+            
+        elif self.loss_function == 'halo_mass_weighted_loss':
+            
+            weights = self.real_halo_masses[mode]
+            n_points, n_outputs = np.shape(y_pred)
+            diff = y_pred - self.training_data_dict['y_'+mode]
+            square = np.power(diff, 2)
+            transp_square = np.transpose(square)
+            weighted_transp_square = np.multiply(transp_square, weights) / np.sum(weights)
+            weighted_square = np.transpose(weighted_transp_square)
+            feature_scores = np.sum(weighted_square, 0) / n_points
+            score = np.sum(feature_scores)
+            
+        return score
         
 class PSO_Particle(PSO_Swarm):
         
@@ -290,18 +318,18 @@ class PSO_Particle(PSO_Swarm):
         
         
         
-    def evaluate_particle(self, x_data, y_data):
+    def evaluate_particle(self, mode):
         
         weightList = self.get_weights()
         self.parent.set_weights(weightList)
         
-        score = self.parent.model.evaluate(x_data, y_data, verbose=0)
+        score = self.parent.evaluate_model(mode)
         
-        if score[0] < self.best_score:
-            self.best_score = score[0]
+        if mode == 'train' and score < self.best_score:
+            self.best_score = score
             self.best_position = self.position
             
-        return score[0]
+        return score
         
     def get_weights(self): # sets the weights from the current pos in parameter space
         

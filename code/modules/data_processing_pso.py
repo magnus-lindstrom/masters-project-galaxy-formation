@@ -92,10 +92,6 @@ def normalise_data(training_data_dict, norm):
     if norm == 'none':
         
         training_data_dict['norm'] = norm
-        
-        x_train = np.delete(x_train, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
-        x_val = np.delete(x_val, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
-        x_test = np.delete(x_test, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
 
     elif norm == 'zero_mean_unit_std':
 
@@ -149,23 +145,7 @@ def normalise_data(training_data_dict, norm):
     return training_data_dict
 
 
-def get_test_score(model, training_data_dict, norm):
-    ### Get the MSE for the test predictions in the original units of the dataset
-    
-    predicted_points = predict_points(training_data_dict, data_type = 'test')
-
-    ### Get mse for the real predictions
-    
-    n_points, n_outputs = np.shape(predicted_points)
-    x_minus_y = predicted_points - training_data_dict['y_test']
-
-    feature_scores = np.sum(np.power(x_minus_y, 2), 0) / n_points
-    test_score = np.sum(feature_scores) / n_outputs
-    
-    return test_score
-
-
-def predict_points(model, training_data_dict, data_type='test'):
+def predict_points(model, training_data_dict, data_type):
 
     if data_type == 'test':
         predicted_norm_points = model.predict(training_data_dict['x_test'])
@@ -175,23 +155,21 @@ def predict_points(model, training_data_dict, data_type='test'):
         predicted_norm_points = model.predict(training_data_dict['x_val'])
     else:
         print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
-    predicted_points = []
-    if training_data_dict['norm'] == 'zero_mean_unit':
+
+    if training_data_dict['norm'] == 'zero_mean_unit_std':
         for i in range(len(training_data_dict['output_features'])):
-            predicted_points.append(predicted_norm_points[i] * training_data_dict['y_data_stds'][i] + 
-                                   training_data_dict['y_data_means'][i])
+            
+            predicted_points = np.multiply(predicted_norm_points, training_data_dict['y_data_stds']) + \
+                                            training_data_dict['y_data_means']
 
     elif training_data_dict['norm'] == 'zero_to_one':
         for i in range(len(training_data_dict['output_features'])):
-            predicted_points.append(predicted_norm_points[i] * (training_data_dict['y_data_max'][i] - 
-                                   training_data_dict['y_data_min'][i]) + training_data_dict['y_data_min'][i])
+            
+            predicted_points = predicted_norm_points * (training_data_dict['y_data_max'] - 
+                                   training_data_dict['y_data_min']) + training_data_dict['y_data_min']
             
     elif training_data_dict['norm'] == 'none':
         predicted_points = predicted_norm_points
-        
-    predicted_points = np.asarray(predicted_points)
-    predicted_points = np.squeeze(predicted_points, axis = -1)
-    predicted_points = np.transpose(predicted_points)
 
     return predicted_points
 
