@@ -4,7 +4,7 @@ from keras import backend as K
 import tensorflow as tf
 
 
-def load_galfile(galfile_directory='/home/magnus/code/special_functions/test_galcat_w_log_densities_3e5.h5'):
+def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'
     galfile = pd.read_hdf(galfile_directory)
     galaxies = galfile.as_matrix()
@@ -115,6 +115,13 @@ def normalise_data(training_data_dict, norm):
         training_data_dict['x_data_stds'] = x_data_stds
         training_data_dict['y_data_means'] = y_data_means
         training_data_dict['y_data_stds'] = y_data_stds
+        
+        training_data_dict['x_train_norm'] = x_train_norm
+        training_data_dict['x_val_norm'] = x_val_norm
+        training_data_dict['x_test_norm'] = x_test_norm
+        training_data_dict['y_train_norm'] = y_train_norm
+        training_data_dict['y_val_norm'] = y_val_norm
+        training_data_dict['y_test_norm'] = y_test_norm
 
     elif norm == 'zero_to_one':
 
@@ -138,6 +145,13 @@ def normalise_data(training_data_dict, norm):
         training_data_dict['x_data_min'] = x_data_min
         training_data_dict['y_data_max'] = y_data_max
         training_data_dict['y_data_min'] = y_data_min
+        
+        training_data_dict['x_train_norm'] = x_train_norm
+        training_data_dict['x_val_norm'] = x_val_norm
+        training_data_dict['x_test_norm'] = x_test_norm
+        training_data_dict['y_train_norm'] = y_train_norm
+        training_data_dict['y_val_norm'] = y_val_norm
+        training_data_dict['y_test_norm'] = y_test_norm
        
     else:
         print('Incorrect norm provided: ', norm)        
@@ -145,31 +159,25 @@ def normalise_data(training_data_dict, norm):
     return training_data_dict
 
 
-def predict_points(model, training_data_dict, data_type):
-
-    if data_type == 'test':
-        predicted_norm_points = model.predict(training_data_dict['x_test'])
-    elif data_type == 'train':
-        predicted_norm_points = model.predict(training_data_dict['x_train'])
-    elif data_type == 'val':
-        predicted_norm_points = model.predict(training_data_dict['x_val'])
+def predict_points(model, training_data_dict, mode):
+    ### Predicts galaxy features in their original units
+    
+    if training_data_dict['norm'] == 'none':
+        additional_ending = mode
     else:
-        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
+        additional_ending = mode + '_norm'
+    
+    predicted_points = model.predict(training_data_dict['x_'+additional_ending])
 
     if training_data_dict['norm'] == 'zero_mean_unit_std':
-        for i in range(len(training_data_dict['output_features'])):
-            
-            predicted_points = np.multiply(predicted_norm_points, training_data_dict['y_data_stds']) + \
-                                            training_data_dict['y_data_means']
+        
+        predicted_points = np.multiply(predicted_points, training_data_dict['y_data_stds']) + \
+                                        training_data_dict['y_data_means']
 
     elif training_data_dict['norm'] == 'zero_to_one':
-        for i in range(len(training_data_dict['output_features'])):
-            
-            predicted_points = predicted_norm_points * (training_data_dict['y_data_max'] - 
-                                   training_data_dict['y_data_min']) + training_data_dict['y_data_min']
-            
-    elif training_data_dict['norm'] == 'none':
-        predicted_points = predicted_norm_points
+        
+        predicted_points = predicted_points * (training_data_dict['y_data_max'] - 
+                               training_data_dict['y_data_min']) + training_data_dict['y_data_min']
 
     return predicted_points
 

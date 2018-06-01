@@ -3,23 +3,23 @@ import matplotlib.pyplot as plt
 from data_processing_pso import predict_points
 from scipy import stats
 
-def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, data_type='test'):
+def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, mode='test'):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('That output feature is not available. Choose between\n%s' % 
               (', '.join(training_data_dict['output_features'])))
         return 
     
-    predicted_points = predict_points(model, training_data_dict, data_type)
+    predicted_points = predict_points(model, training_data_dict, mode)
     
-    if data_type == 'test':
+    if mode == 'test':
         data = training_data_dict['y_test']
-    elif data_type == 'train':
+    elif mode == 'train':
         data = training_data_dict['y_train']
-    elif data_type == 'val':
+    elif mode == 'val':
         data = training_data_dict['y_val']
     else:
-        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
+        print('Please enter a valid mode (\'train\', \'val\' or \'test\')')
 
     
     feat_nr = training_data_dict['y_data_keys'][predicted_feat]
@@ -40,24 +40,24 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
 
 
 def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, nBins=8, title=None,
-                            data_type='test'):
+                            mode='test'):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('Predicted feature not available (%s). Choose between\n%s' % 
               (predicted_feat, ', '.join(training_data_dict['output_features'])))
         return 
-    if data_type == 'test':
+    if mode == 'test':
         data = training_data_dict['y_test']
-    elif data_type == 'train':
+    elif mode == 'train':
         data = training_data_dict['y_train']
-    elif data_type == 'val':
+    elif mode == 'val':
         data = training_data_dict['y_val']
     else:
-        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
+        print('Please enter a valid mode (\'train\', \'val\' or \'test\')')
     
-    predicted_points = predict_points(model, training_data_dict, data_type = data_type)
+    predicted_points = predict_points(model, training_data_dict, mode = mode)
     
-    binning_feature_data = training_data_dict['original_data'][training_data_dict['test_indices'], 
+    binning_feature_data = training_data_dict['original_data'][training_data_dict[mode+'_indices'], 
                                                               training_data_dict['original_data_keys'][binning_feat]]
     binned_feat_min_value = np.amin(binning_feature_data)
     binned_feat_max_value = np.amax(binning_feature_data)
@@ -114,26 +114,26 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
 
 
 def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, title=None,
-                                y_min=None, y_max=None, x_min=None, x_max=None, data_type='test'):
+                                y_min=None, y_max=None, x_min=None, x_max=None, mode='test'):
 
     ### Will make two subplots, the left one with predicted x and y features, the right one with true x and y
     ### features. If either the x or y feature is an input feature, and thus has no predicted feature, the left
     ### subplot will instead contain the true values for that feature.
     
-    if data_type == 'test':
+    if mode == 'test':
         data = training_data_dict['y_test']
-    elif data_type == 'train':
+    elif mode == 'train':
         data = training_data_dict['y_train']
-    elif data_type == 'val':
+    elif mode == 'val':
         data = training_data_dict['y_val']
     else:
-        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
+        print('Please enter a valid mode (\'train\', \'val\' or \'test\')')
 
-    predicted_points = predict_points(model, training_data_dict, data_type=data_type)
+    predicted_points = predict_points(model, training_data_dict, mode=mode)
         
-    true_x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+    true_x_data = training_data_dict['original_data'][training_data_dict[mode+'_indices'], 
                                                               training_data_dict['original_data_keys'][x_axis_feature]]
-    true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+    true_y_data = training_data_dict['original_data'][training_data_dict[mode+'_indices'], 
                                                               training_data_dict['original_data_keys'][y_axis_feature]]
     true_x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
     true_y_label = 'True %s %s' % (y_axis_feature, unit_dict[y_axis_feature])
@@ -219,7 +219,7 @@ def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_fe
     return fig
 
 
-def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, title=None, data_type='test',
+def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, title=None, mode='test',
                              marker_size=5):
     
     
@@ -228,10 +228,10 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
               (y_axis_feature, ', '.join(training_data_dict['output_features'])))
         return 
         
-    x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+    x_data = training_data_dict['original_data'][training_data_dict[mode+'_indices'], 
                                                               training_data_dict['original_data_keys'][x_axis_feature]]
-    pred_y_data = predict_points(model, training_data_dict, data_type=data_type)[:,training_data_dict['y_data_keys'][y_axis_feature]]
-    true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+    pred_y_data = predict_points(model, training_data_dict, mode=mode)[:,training_data_dict['y_data_keys'][y_axis_feature]]
+    true_y_data = training_data_dict['original_data'][training_data_dict[mode+'_indices'], 
                                                               training_data_dict['original_data_keys'][y_axis_feature]]
     x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
     y_label = '%s %s' % (y_axis_feature, unit_dict[y_axis_feature])

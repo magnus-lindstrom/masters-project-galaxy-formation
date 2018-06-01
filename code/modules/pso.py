@@ -23,9 +23,10 @@ class Feed_Forward_Neural_Network():
                                    self.output_features, self.activation_function, pso_param_dict=pso_param_dict)
         
     def pso_train(self, nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check=None, 
-                  speed_check=False):
+                  speed_check=False, std_penalty=False):
         
-        self.pso_swarm.train_network(nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check, speed_check)
+        self.pso_swarm.train_network(nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check, speed_check,
+                                    std_penalty)
 
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -63,7 +64,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.input_features = input_features
         self.output_features = output_features
         
-        self.best_weights = None
+        self.best_weights_train = None
+        self.best_weights_val = None
         
         self.inertia_weight = self.pso_param_dict['inertiaWeightStart']
         self.vMax = (self.pso_param_dict['xMax']-self.pso_param_dict['xMin']) / self.pso_param_dict['deltaT']
@@ -86,7 +88,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         # always give the model mse loss. When evaluating the particles, the actual loss will be taken into account
         self.model.compile(loss='mse', optimizer='adam')
         
-    def train_network(self, nr_iterations, training_data_dict, loss_function, nr_iters_before_restart_check, speed_check):
+    def train_network(self, nr_iterations, training_data_dict, loss_function, nr_iters_before_restart_check, speed_check,
+                     std_penalty):
         
         if loss_function == 'halo_mass_weighted_loss':
         
@@ -101,6 +104,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.training_data_dict = training_data_dict
         self.loss_function = loss_function
         self.nr_iterations_trained = nr_iterations
+        self.std_penalty = std_penalty
         
         with open('progress.txt', 'w+') as f:
 
@@ -114,6 +118,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                                             self.pso_param_dict['explorationFraction'] / nr_iterations)
                 inertia_weight = self.pso_param_dict['inertiaWeightStart']
 
+                self.progress = 0
+                
                 self.validationScoreHistory = []
                 self.trainingScoreHistory = []
                 
@@ -126,16 +132,18 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                 glob_start = time.time()
                 for iteration in range(nr_iterations):
+                    
+                    self.progress = iteration / nr_iterations
 
                     if (int(iteration/10) == iteration/10) and (iteration > 0):
                         # see if network has run into a local minima   
                         if nr_iters_before_restart_check is not None:
                             if (iteration - lastTimeSwarmBest) > nr_iters_before_restart_check:
-                                self.set_weights(self.best_weights)
+                                self.set_weights(self.best_weights_val)
                                 y_pred = self.predict_output('val')
 
                                 stds = np.std(y_pred, axis=0)
-                                print('standard deviations of predicted parameters: ', stds)
+                                print('standard deviations of predicted parameters (validation set): ', stds)
                                 shouldStartFresh = np.any(stds < self.pso_param_dict['min_std_tol'])
                                 if shouldStartFresh:
                                     break
@@ -159,6 +167,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         
                         if is_swarm_best_train:
                             
+                            self.best_weights_train = particle.get_weights()
                         
                             lastTimeSwarmBest = iteration
                             self.swarm_best_train = train_score
@@ -167,7 +176,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                             val_score = particle.evaluate_particle('val')
                             is_swarm_best_val = (val_score < self.swarm_best_val)
                             if is_swarm_best_val: # only update best weights after val highscore
-                                self.best_weights = particle.get_weights()
+                                self.best_weights_val = particle.get_weights()
                             
                             self.validationScoreHistory.append(val_score)
                             self.trainingScoreHistory.append(train_score)
@@ -186,10 +195,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
                     
 
-        end = time.time()
-        print('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
-        f.write('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
-        f.flush()
+            end = time.time()
+            print('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
+            f.write('%s, Training complete.' % (datetime.datetime.now().strftime("%H:%M:%S")))
+            f.flush()
         
     def update_inertia_weight(self, inertia_weight, inertia_weight_reduction, iteration, f):
         
@@ -204,8 +213,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         return inertia_weight
         
     def predict_output(self, mode):
-    
-        y_pred = self.model.predict(self.training_data_dict['x_'+mode])
+        
+        if self.training_data_dict['norm'] == 'none':
+            y_pred = self.model.predict(self.training_data_dict['x_'+mode])
+        else:
+            y_pred = self.model.predict(self.training_data_dict['x_'+mode+'_norm'])
 
         return y_pred
     
@@ -266,35 +278,57 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         for i in range(len(weightMatrixList)):
             self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
             
-    def set_best_weights(self):
-        weightMatrixList = self.best_weights[0]
-        biasList = self.best_weights[1]
+    def set_best_weights(self, mode):
+        if mode == 'train':
+            weightMatrixList = self.best_weights_train[0]
+            biasList = self.best_weights_train[1]
+        elif mode == 'val':
+            weightMatrixList = self.best_weights_val[0]
+            biasList = self.best_weights_val[1]
+            
         for i in range(len(weightMatrixList)):
             self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
             
             
     def evaluate_model(self, mode):
     
-        y_pred = self.model.predict(self.training_data_dict['x_'+mode])
+        if self.training_data_dict['norm'] == 'none':
+            additional_ending = mode
+        else:
+            additional_ending = mode + '_norm'
+            
+        y_pred = self.model.predict(self.training_data_dict['x_'+additional_ending])
     
         if self.loss_function == 'mse':
             n_points, n_outputs = np.shape(y_pred)
-            diff = y_pred - self.training_data_dict['y_'+mode]
+            diff = y_pred - self.training_data_dict['y_'+additional_ending]
             square = np.power(diff, 2)
             feature_scores = np.sum(square, 0) / n_points
             score = np.sum(feature_scores)
             
         elif self.loss_function == 'halo_mass_weighted_loss':
+            TODO: is it a stupid idea to change the objective function as the training proceeds? 
+                the plan below was to add the weights in increments, not starting with the full weights.
+                I guess it might be stupid..
             
-            weights = self.real_halo_masses[mode]
+            end_weights = self.real_halo_masses[mode] / np.sum(self.real_halo_masses[mode])
+            weights = np.ones(self.real_halo_masses[mode]) 
             n_points, n_outputs = np.shape(y_pred)
-            diff = y_pred - self.training_data_dict['y_'+mode]
+            diff = y_pred - self.training_data_dict['y_'+additional_ending]
             square = np.power(diff, 2)
             transp_square = np.transpose(square)
-            weighted_transp_square = np.multiply(transp_square, weights) / np.sum(weights)
+            weighted_transp_square = np.multiply(transp_square, weights)
             weighted_square = np.transpose(weighted_transp_square)
             feature_scores = np.sum(weighted_square, 0) / n_points
             score = np.sum(feature_scores)
+            
+        if self.std_penalty:
+            pred_stds = np.std(y_pred, axis=0)
+            true_stds = np.std(self.training_data_dict['y_'+additional_ending], axis=0)
+            std_ratio = np.sum(true_stds / pred_stds)
+            if std_ratio > 10:
+                encourage_factor = std_ratio / 10
+                score = score * encourage_factor
             
         return score
         
