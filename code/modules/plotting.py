@@ -3,14 +3,16 @@ import matplotlib.pyplot as plt
 from data_processing import predict_points
 from scipy import stats
 
-def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, data_type='test'):
+def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, data_type='test',
+                                predicted_points=None):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('That output feature is not available. Choose between\n%s' % 
               (', '.join(training_data_dict['output_features'])))
         return 
     
-    predicted_points = predict_points(model, training_data_dict, data_type = data_type)
+    if predicted_points is None:
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
     
     if data_type == 'test':
         data = training_data_dict['y_test']
@@ -40,35 +42,48 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
 
 
 def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, nBins=8, title=None,
-                            data_type='test'):
+                            data_type='test', predicted_points=None):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('Predicted feature not available (%s). Choose between\n%s' % 
               (predicted_feat, ', '.join(training_data_dict['output_features'])))
         return 
+    pred_feat_nr = training_data_dict['y_data_keys'][predicted_feat]
     if data_type == 'test':
-        data = training_data_dict['y_test']
+        data = training_data_dict['y_test'][:, pred_feat_nr]
     elif data_type == 'train':
-        data = training_data_dict['y_train']
+        data = training_data_dict['y_train'][:, pred_feat_nr]
     elif data_type == 'val':
-        data = training_data_dict['y_val']
+        data = training_data_dict['y_val'][:, pred_feat_nr]
     else:
         print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
-    
-    predicted_points = predict_points(model, training_data_dict, data_type = data_type)
-    
-    binning_feature_data = training_data_dict['original_data'][training_data_dict['test_indices'], 
+        
+    binning_feature_data = training_data_dict['original_data'][training_data_dict['%s_indices'%(data_type)], 
                                                               training_data_dict['original_data_keys'][binning_feat]]
+    if predicted_points is None:
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
+        
+        
+    if predicted_feat == 'SFR':
+        nonzero_indices = np.nonzero(data)
+        data = data[nonzero_indices]
+        binning_feature_data = binning_feature_data[nonzero_indices]
+        predicted_points = predicted_points[nonzero_indices, :]  
+        predicted_points = np.squeeze(predicted_points, axis=0)
+        if title is None:
+            title = 'Only nonzero values binned.'
+        else:
+            title += '\nOnly nonzero values binned.'
+        
+    
     binned_feat_min_value = np.amin(binning_feature_data)
     binned_feat_max_value = np.amax(binning_feature_data)
     bin_edges = np.linspace(binned_feat_min_value, binned_feat_max_value, nBins+1)
     
-    pred_feat_nr = training_data_dict['y_data_keys'][predicted_feat]
-
     # bin_means contain (0: mean of the binned values, 1: bin edges, 2: numbers pointing each example to a bin)
-    bin_means_true = stats.binned_statistic(binning_feature_data, data[:,pred_feat_nr], bins=bin_edges)
+    bin_means_true = stats.binned_statistic(binning_feature_data, data, bins=bin_edges)
     bin_means_pred = stats.binned_statistic(binning_feature_data, predicted_points[:,pred_feat_nr].flatten(), 
-                                            bins=bin_edges)
+                                            bins=bin_edges)  
 
     bin_centers = []
     for iBin in range(nBins):
@@ -77,7 +92,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
     sorted_true_y_data = []
     sorted_pred_y_data = []
     for iBin in range(1,nBins+1):
-        sorted_true_y_data.append(data[bin_means_true[2] == iBin, pred_feat_nr])
+        sorted_true_y_data.append(data[bin_means_true[2] == iBin])
         sorted_pred_y_data.append(predicted_points[bin_means_pred[2] == iBin, pred_feat_nr])
 
     # get standard deviations of the binned values
@@ -114,13 +129,15 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
 
 
 def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, title=None,
-                                y_min=None, y_max=None, x_min=None, x_max=None, data_type='test'):
+                                y_min=None, y_max=None, x_min=None, x_max=None, data_type='test',
+                                predicted_points=None):
 
     ### Will make two subplots, the left one with predicted x and y features, the right one with true x and y
     ### features. If either the x or y feature is an input feature, and thus has no predicted feature, the left
     ### subplot will instead contain the true values for that feature.
 
-    predicted_points = predict_points(model, training_data_dict, data_type=data_type)
+    if predicted_points is None:
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
     true_x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
                                                               training_data_dict['original_data_keys'][x_axis_feature]]
@@ -211,7 +228,7 @@ def get_scatter_comparison_plots(model, training_data_dict, unit_dict, x_axis_fe
 
 
 def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, title=None, data_type='test',
-                             marker_size=5):
+                             marker_size=5, y_min=None, y_max=None, x_min=None, x_max=None, predicted_points=None):
     
     
     if not y_axis_feature in training_data_dict['output_features']:
@@ -221,7 +238,13 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
         
     x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
                                                               training_data_dict['original_data_keys'][x_axis_feature]]
-    pred_y_data = predict_points(model, training_data_dict, data_type=data_type)[:,training_data_dict['y_data_keys'][y_axis_feature]]
+    if predicted_points is None:
+        pred_y_data = predict_points(model, training_data_dict, data_type = data_type)[:,training_data_dict['y_data_keys']
+                                                                                   [y_axis_feature]]
+    else:
+        pred_y_data = predicted_points[:,training_data_dict['y_data_keys'][y_axis_feature]]
+        
+    
     true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
                                                               training_data_dict['original_data_keys'][y_axis_feature]]
     x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
@@ -234,6 +257,15 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
     plt.plot(x_data, pred_y_data, 'r.', markersize=marker_size)
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
+    
+    if y_min is not None:
+        ax.set_ylim(bottom=y_min)
+    if y_max is not None:
+        ax.set_ylim(top=y_max)
+    if x_min is not None:
+        ax.set_xlim(left=x_min)
+    if x_max is not None:
+        ax.set_xlim(right=x_max)
 
     plt.legend(['True data', 'Predicted data'], loc='upper left', fontsize='xx-large')
     

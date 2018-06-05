@@ -11,10 +11,12 @@
       contains json files comparing the scores obtained from different inputs
       - **benchmark_code**
       code for running benchmarks as well as the results obtained from them
-    - **modules** -- Python scripts with finished functions used by other notebooks/scripts
-    - **special_functions** -- Notebooks used to generate non-neural network results, e.g. modify galaxy catalogues
+    - **modules** 
+    Python scripts with finished functions used by other notebooks/scripts
+    - **non_network_notebooks** 
+    Notebooks used to generate non-neural network results, e.g. modify galaxy catalogues
     - **pso_code**
-      - several_inputs_outputs_pso_object_oriented.ipynb
-      the latest renditions of the code to train models with a pso. has not been updated in a while
+      - pso_general_purpose_notebook.ipynb
+      the main notebook for backprop networks to train models, evaluate, create figures, etc
   - **models**
   already trained models. So far nothing of importance has been saved here

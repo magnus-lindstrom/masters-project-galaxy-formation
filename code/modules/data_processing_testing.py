@@ -4,7 +4,7 @@ from keras import backend as K
 import tensorflow as tf
 
 
-def load_galfile(galfile_directory='/home/magnus/code/special_functions/test_galcat_w_log_densities_3e5.h5'):
+def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'
     galfile = pd.read_hdf(galfile_directory)
     galaxies = galfile.as_matrix()
@@ -105,14 +105,14 @@ def normalise_data(training_data_dict, norm):
         input_val_dict['main_input'] = x_val
         input_test_dict['main_input'] = x_test
         
-        input_train_dict['Halo_mass'] = x_train_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
-        input_val_dict['Halo_mass'] = x_val_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
-        input_test_dict['Halo_mass'] = x_test_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_train_dict['Halo_mass'] = x_train[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_val_dict['Halo_mass'] = x_val[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_test_dict['Halo_mass'] = x_test[:,training_data_dict['x_data_keys']['Halo_mass']]
         
         for i_feat, feat in enumerate(training_data_dict['output_features']):
-            input_train_dict[feat] = y_train[:, i_feat]
-            input_val_dict[feat] = y_val[:, i_feat]
-            input_test_dict[feat] = y_test[:, i_feat]
+            output_train_dict[feat] = y_train[:, i_feat]
+            output_val_dict[feat] = y_val[:, i_feat]
+            output_test_dict[feat] = y_test[:, i_feat]
 
     elif norm == 'zero_mean_unit_std':
 
@@ -124,17 +124,13 @@ def normalise_data(training_data_dict, norm):
         x_val_norm = (x_val - x_data_means) / x_data_stds
         x_test_norm = (x_test - x_data_means) / x_data_stds
         
-        input_train_dict['halo_mass_input'] = x_train_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
-        input_val_dict['halo_mass_input'] = x_val_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
-        input_test_dict['halo_mass_input'] = x_test_norm[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_train_dict['Halo_mass'] = x_train[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_val_dict['Halo_mass'] = x_val[:,training_data_dict['x_data_keys']['Halo_mass']]
+        input_test_dict['Halo_mass'] = x_test[:,training_data_dict['x_data_keys']['Halo_mass']]
         
-        x_train_norm = np.delete(x_train_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
-        x_val_norm = np.delete(x_val_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
-        x_test_norm = np.delete(x_test_norm, training_data_dict['x_data_keys']['Halo_mass'], axis = 1)
-        
-        input_train_dict['others_input'] = x_train_norm
-        input_val_dict['others_input'] = x_val_norm
-        input_test_dict['others_input'] = x_test_norm
+        input_train_dict['main_input'] = x_train_norm
+        input_val_dict['main_input'] = x_val_norm
+        input_test_dict['main_input'] = x_test_norm
             
         #for i in range(np.size(y_train, 1)):
         y_data_means = np.mean(y_train, 0)

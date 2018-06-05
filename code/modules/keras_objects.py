@@ -38,7 +38,7 @@ def tunnel_loss(y_true, y_pred):
 
 class Weighted_loss_layer(Layer):
 
-    ### OBS!! This layer takes as input a list of three tensors: [weights to give numbers, correct output, output of network]
+    ### OBS!! This layer takes as input a list of three tensors: [weights to give points, correct output, output of network]
     ### it has no trainable weights and the weights are zero (do not contribute to reg loss)
 
     def __init__(self):
@@ -55,10 +55,37 @@ class Weighted_loss_layer(Layer):
         super(Weighted_loss_layer, self).build(input_shape)  # Be sure to call this at the end
 
     def call(self, inputs):
-        weighting, correct_output, network_output = inputs
+        weights, correct_output, network_output = inputs
         squared_diffs = K.square(network_output - correct_output)
         weighted_square = weights * squared_diffs / K.sum(weights)
         mean = K.mean(weighted_square, axis=-1)
+        return mean
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+    
+class Nonweighted_loss_layer(Layer):
+
+    ### OBS!! This layer takes as input a list of two tensors: [correct output, output of network]
+    ### it has no trainable weights and the weights are zero (do not contribute to reg loss)
+
+    def __init__(self):
+        self.output_dim = 1
+        super(Nonweighted_loss_layer, self).__init__()
+
+    def build(self, input_shape):
+        # Create a non-trainable weight variable for this layer.
+        print(input_shape)
+        self.kernel = self.add_weight(name='kernel', 
+                                      shape=(input_shape[1], self.output_dim),
+                                      initializer='zero',
+                                      trainable=False)
+        super(Nonweighted_loss_layer, self).build(input_shape)  # Be sure to call this at the end
+
+    def call(self, inputs):
+        correct_output, network_output = inputs
+        squared_diffs = K.square(network_output - correct_output)
+        mean = K.mean(squared_diffs, axis=-1)
         return mean
 
     def compute_output_shape(self, input_shape):
