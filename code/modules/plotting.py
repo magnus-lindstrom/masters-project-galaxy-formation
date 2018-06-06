@@ -23,7 +23,7 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
     else:
         print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
 
-    
+    print(np.shape(predicted_points))
     feat_nr = training_data_dict['y_data_keys'][predicted_feat]
 
     fig = plt.figure(figsize=(8,8))
