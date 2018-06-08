@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from data_processing import predict_points
 from scipy import stats
+import corner
 
 def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, data_type='test',
                                 predicted_points=None):
@@ -23,7 +24,6 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
     else:
         print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
 
-    print(np.shape(predicted_points))
     feat_nr = training_data_dict['y_data_keys'][predicted_feat]
 
     fig = plt.figure(figsize=(8,8))
@@ -64,16 +64,16 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
         predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
         
-    if predicted_feat == 'SFR':
-        nonzero_indices = np.nonzero(data)
-        data = data[nonzero_indices]
-        binning_feature_data = binning_feature_data[nonzero_indices]
-        predicted_points = predicted_points[nonzero_indices, :]  
-        predicted_points = np.squeeze(predicted_points, axis=0)
-        if title is None:
-            title = 'Only nonzero values binned.'
-        else:
-            title += '\nOnly nonzero values binned.'
+#    if predicted_feat == 'SFR':
+#        nonzero_indices = np.nonzero(data)
+#        data = data[nonzero_indices]
+#        binning_feature_data = binning_feature_data[nonzero_indices]
+#        predicted_points = predicted_points[nonzero_indices, :]  
+#        predicted_points = np.squeeze(predicted_points, axis=0)
+#        if title is None:
+#            title = 'Only nonzero values binned.'
+#        else:
+#            title += '\nOnly nonzero values binned.'
         
     
     binned_feat_min_value = np.amin(binning_feature_data)
@@ -274,9 +274,80 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
         
     return fig
     
+def get_sfr_stellar_mass_contour(model, training_data_dict, unit_dict, title=None, data_type='test',
+                                 y_min=None, y_max=None, x_min=None, x_max=None, predicted_points=None):
     
+    if predicted_points is None:
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
+        
+        
+    sfr_true = training_data_dict['original_data'][:, training_data_dict['original_data_keys']['SFR']]
+    stellar_masses_true = training_data_dict['original_data'][:, training_data_dict['original_data_keys']['Stellar_mass']]
     
+    min_true_sfr = np.amin(sfr_true)
+    min_pred_sfr = np.amin(predicted_points[:,training_data_dict['y_data_keys']['SFR']])
+    max_true_sfr = np.amax(sfr_true)
+    max_pred_sfr = np.amax(predicted_points[:,training_data_dict['y_data_keys']['SFR']])
     
+    min_true_stellar_mass = np.amin(stellar_masses_true)
+    min_pred_stellar_mass = np.amin(predicted_points[:,training_data_dict['y_data_keys']['Stellar_mass']])
+    max_true_stellar_mass = np.amax(stellar_masses_true)
+    max_pred_stellar_mass = np.amax(predicted_points[:,training_data_dict['y_data_keys']['Stellar_mass']])
+    
+    if min_true_sfr <= min_pred_sfr:
+        if max_true_sfr > max_pred_sfr:
+            sfr_range = [min_true_sfr, max_true_sfr]
+        else:
+            sfr_range = [min_true_sfr, max_pred_sfr]
+    else:
+        if max_true_sfr > max_pred_sfr:
+            sfr_range = [min_pred_sfr, max_true_sfr]
+        else:
+            sfr_range = [min_pred_sfr, max_pred_sfr]
+    
+    if min_true_stellar_mass <= min_pred_stellar_mass:
+        if max_true_stellar_mass > max_pred_stellar_mass:
+            stellar_mass_range = [min_true_stellar_mass, max_true_stellar_mass]
+        else:
+            stellar_mass_range = [min_true_stellar_mass, max_true_stellar_mass]
+    else:
+        if max_true_stellar_mass > max_pred_stellar_mass:
+            stellar_mass_range = [min_pred_stellar_mass, max_true_stellar_mass]
+        else:
+            stellar_mass_range = [min_pred_stellar_mass, max_pred_stellar_mass]
+        
+        
+        
+        if np.amin(stellar_masses_true) <= np.amin(predicted_points[:,training_data_dict['y_data_keys']['Stellar_mass']]):
+            min_sfr = np.amin(sfr_true)
+    sfr_true = np.expand_dims(sfr_true, axis=1)
+    stellar_masses_true = np.expand_dims(stellar_masses_true, axis=1)
+
+    data = np.hstack((stellar_masses_true, sfr_true))
+
+    fig1 = corner.corner(data, labels=['Stellar_mass {}'.format(unit_dict['Stellar_mass']),
+                                         'SFR {}'.format(unit_dict['SFR'])], label_kwargs={"fontsize": 20},
+                                         range=[stellar_mass_range, sfr_range])
+    fig1.gca().annotate("True stellar mass to\nSFR contour plot.",
+                          xy=(.78, .75), xycoords="figure fraction",
+                          xytext=(0, 0), textcoords="offset points",
+                          ha="center", va="center", fontsize=20)
+    fig1.set_size_inches(12, 12)
+    plt.tight_layout()
+    plt.show()
+    
+    fig2 = corner.corner(predicted_points, labels=['Stellar_mass {}'.format(unit_dict['Stellar_mass']),
+                                         'SFR {}'.format(unit_dict['SFR'])], label_kwargs={"fontsize": 20},
+                                         range=[stellar_mass_range, sfr_range])
+    fig2.gca().annotate("Predicted stellar mass to\nSFR contour plot.",
+                          xy=(.78, .75), xycoords="figure fraction",
+                          xytext=(0, 0), textcoords="offset points",
+                          ha="center", va="center", fontsize=20)
+    fig2.set_size_inches(12, 12)
+    plt.tight_layout()
+    plt.show()
+    
+    return [fig1, fig2]
     
     
     

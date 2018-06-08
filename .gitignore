@@ -20,3 +20,4 @@ etc/
 *.pyc
 .vim*
 *__pycache___
+*.h5

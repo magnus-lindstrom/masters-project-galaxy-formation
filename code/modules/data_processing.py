@@ -4,7 +4,7 @@ from keras import backend as K
 import tensorflow as tf
 
 
-def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_3e5.h5'):
+def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_and_log_sfr_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'
     galfile = pd.read_hdf(galfile_directory)
     galaxies = galfile.as_matrix()
@@ -18,7 +18,7 @@ def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test
              'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
              'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19, 'Environmental_density': 20}
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
-             'Z_vel': '', 'Halo_mass': 'log($M_{H}/M_{S}$)', 'Stellar_mass': 'log($M_{G}/M_{S}$)', 'SFR': '$M_{S}/yr$', 
+             'Z_vel': '', 'Halo_mass': 'log($M_{H}/M_{S}$)', 'Stellar_mass': 'log($M_{G}/M_{S}$)', 'SFR': '$log(M_{S}/yr)$', 
              'Intra_cluster_mass': '', 'Halo_mass_peak': 'log($M_{G}/M_{S}$)', 
              'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
              'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 

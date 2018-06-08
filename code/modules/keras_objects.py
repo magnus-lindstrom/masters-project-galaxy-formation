@@ -103,9 +103,3 @@ class Nonweighted_loss_layer(Layer):
     
     
     
-    
-    
-    
-    
-    
-    

@@ -4,7 +4,7 @@ from keras import backend as K
 import tensorflow as tf
 
 
-def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_3e5.h5'):
+def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_and_log_sfr_3e5.h5'):
     # '/scratch/data/galcats/P200/galaxies.Z01.h5'
     galfile = pd.read_hdf(galfile_directory)
     galaxies = galfile.as_matrix()
