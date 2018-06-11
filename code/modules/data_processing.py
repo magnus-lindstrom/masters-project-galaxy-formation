@@ -13,6 +13,10 @@ def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test
     ### Remove data points with halo mass below 10.5
     galaxies = galaxies[galaxies[:,6] > 10.5, :]
     
+    # Scramble the order of the galaxies, since they may be somewhat ordered to begin with
+    inds = np.random.permutation(np.shape(galaxies)[0])
+    galaxies = galaxies[inds, :]
+    
     data_keys = {'X_pos': 0, 'Y_pos': 1, 'Z_pos': 2, 'X_vel': 3, 'Y_vel': 4, 'Z_vel': 5, 'Halo_mass': 6, 
              'Stellar_mass': 7, 'SFR': 8, 'Intra_cluster_mass': 9, 'Halo_mass_peak': 10, 'Stellar_mass_obs': 11, 
              'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
@@ -28,13 +32,23 @@ def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test
     return galaxies, data_keys, unit_dict
 
 
-def divide_train_data(galaxies, data_keys, input_features, output_features, total_set_size, train_size, val_size, test_size):
+def divide_train_data(galaxies, data_keys, input_features, output_features, total_set_size, train_size=0, val_size=0, test_size=0,
+                      k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0):
     
     n_data_points = galaxies.shape[0]
-    subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
-    train_indices = subset_indices[: int(train_size)]
-    val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
-    test_indices = subset_indices[int(train_size+val_size) :]
+    
+    if k_fold_cv:
+        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
+        fold_size = int(total_set_size / tot_cv_folds)
+        val_indices = subset_indices[cv_fold_nr*fold_size : (cv_fold_nr+1)*fold_size]
+        train_indices = np.delete(subset_indices, val_indices)
+        test_indices = [0]
+        
+    else:
+        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
+        train_indices = subset_indices[: int(train_size)]
+        val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
+        test_indices = subset_indices[int(train_size+val_size) :]
 
     x_train = np.zeros((len(train_indices), len(input_features)))
     x_val = np.zeros((len(val_indices), len(input_features)))
@@ -264,7 +278,27 @@ def predict_points(model, training_data_dict, data_type='test'):
         
     return predicted_points
 
+def get_weights(training_data_dict, output_features, outputs_to_weigh):
+    train_w_tmp = training_data_dict['original_data'][training_data_dict['train_indices'], 
+                                        training_data_dict['original_data_keys']['Halo_mass']]
+    train_w_tmp = np.power(10, train_w_tmp)
+    train_w_tmp = train_w_tmp / np.sum(train_w_tmp)
+    val_w_tmp = training_data_dict['original_data'][training_data_dict['val_indices'], 
+                                        training_data_dict['original_data_keys']['Halo_mass']]
+    val_w_tmp = np.power(10, val_w_tmp)
+    val_w_tmp = val_w_tmp / np.sum(val_w_tmp)
+    train_weights = {}
+    val_weights = {}
 
+    for output in output_features:
+        if output in outputs_to_weigh:
+            train_weights[output] = train_w_tmp
+            val_weights[output] = val_w_tmp
+        else:
+            train_weights[output] = np.ones(int(len(training_data_dict['train_indices'])))
+            val_weights[output] = np.ones(int(len(training_data_dict['val_indices'])))
+            
+    return [train_weights, val_weights]
 
 
 
