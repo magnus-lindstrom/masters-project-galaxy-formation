@@ -2,33 +2,134 @@ import pandas as pd
 import numpy as np
 from keras import backend as K
 import tensorflow as tf
+import os.path
 
 
-def load_galfile(galfile_directory='/home/magnus/code/non_network_notebooks/test_galcat_w_log_densities_and_log_sfr_3e5.h5'):
-    # '/scratch/data/galcats/P200/galaxies.Z01.h5'
-    galfile = pd.read_hdf(galfile_directory)
+def load_galfiles(redshifts , with_densities=False, equal_numbers=False):
+
+    if with_densities:
+        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
+    else:
+        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
+    
+    galaxy_list = []
+    for redshift in redshifts:
+        galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift)
+        if os.path.isfile(galfile_path):
+            galfile = pd.read_hdf(galfile_path)
+            gals = galfile.as_matrix()
+            gal_header = galfile.keys().tolist()
+            
+            ### Remove data points with halo mass below 10.5
+            gals = gals[gals[:,6] > 10.5, :]
+            
+            redshift_column = redshift * np.ones((np.shape(gals)[0],1))
+            gals = np.concatenate((gals, redshift_column), axis=1)
+            
+            # Scramble the order of the galaxies, since they are somewhat ordered to begin with
+            inds = np.random.permutation(np.shape(gals)[0])
+            gals = gals[inds, :]
+            
+            galaxy_list.append(gals)
+            
+        else:
+            print('file not found for redshift {:2d} in path \'{}\''.format(redshift, galfile_path))
+            
+    if galaxy_list:
+       
+        if equal_numbers:
+            min_nr = 1e100
+            for gals in galaxy_list:
+                if np.shape(gals)[0] < min_nr:
+                    min_nr = np.shape(gals)[0]
+            galaxies = None
+            for gals in galaxy_list:
+                gals = gals[:min_nr, :]
+                if galaxies is not None:
+                    galaxies = np.concatenate((galaxies, gals), axis=0)
+                else:
+                    galaxies = gals
+        else:
+            galaxies = None
+            for gals in galaxy_list:
+                if galaxies is not None:
+                    galaxies = np.concatenate((galaxies, gals), axis=0)
+                else:
+                    galaxies = gals
+
+        # Scramble the order of the galaxies, since the redshifts are still in order
+        inds = np.random.permutation(np.shape(galaxies)[0])
+        galaxies = galaxies[inds, :]
+
+        data_keys = {'X_pos': 0, 'Y_pos': 1, 'Z_pos': 2, 'X_vel': 3, 'Y_vel': 4, 'Z_vel': 5, 'Halo_mass': 6, 
+                 'Stellar_mass': 7, 'SFR': 8, 'Intra_cluster_mass': 9, 'Halo_mass_peak': 10, 'Stellar_mass_obs': 11, 
+                 'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
+                 'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19}
+        unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
+                 'Z_vel': '', 'Halo_mass': 'log($M_{H}/M_{S}$)', 'Stellar_mass': 'log($M_{G}/M_{S}$)', 'SFR': '$log(M_{S}/yr)$', 
+                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'log($M_{G}/M_{S}$)', 
+                 'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
+                 'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
+                 'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': ''}
+        if np.shape(galaxies)[1] == 22:
+            data_keys['Environmental_density'] = 20
+            unit_dict['Environmental_density'] = 'log($M_{G}/M_{S}/Mpc^3$)'
+            data_keys['Redshift'] = 21
+            unit_dict['Redshift'] = 'z'
+        else:
+            data_keys['Redshift'] = 20
+            unit_dict['Redshift'] = 'z'
+
+        return galaxies, data_keys, unit_dict
+    else:
+        print('No files with the specified redshifts found.')
+        return 
+
+def load_single_galfile(redshift, with_densities=False):
+    
+    if with_densities:
+        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
+    else:
+        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
+    
+    galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift)
+    galfile = pd.read_hdf(galfile_path)
     galaxies = galfile.as_matrix()
     gal_header = galfile.keys().tolist()
-
+    
+    print('shape before modification: ',np.shape(galaxies))
     ### Remove data points with halo mass below 10.5
     galaxies = galaxies[galaxies[:,6] > 10.5, :]
+    
     
     # Scramble the order of the galaxies, since they may be somewhat ordered to begin with
     inds = np.random.permutation(np.shape(galaxies)[0])
     galaxies = galaxies[inds, :]
+    redshift_column = redshift * np.ones((np.shape(galaxies)[0],1))
+    galaxies = np.concatenate((galaxies, redshift_column), axis=1)
+    
+    print('shape after removing small galaxies and adding redshift: ',np.shape(galaxies))
+
     
     data_keys = {'X_pos': 0, 'Y_pos': 1, 'Z_pos': 2, 'X_vel': 3, 'Y_vel': 4, 'Z_vel': 5, 'Halo_mass': 6, 
              'Stellar_mass': 7, 'SFR': 8, 'Intra_cluster_mass': 9, 'Halo_mass_peak': 10, 'Stellar_mass_obs': 11, 
              'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
-             'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19, 'Environmental_density': 20}
+             'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19}
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
              'Z_vel': '', 'Halo_mass': 'log($M_{H}/M_{S}$)', 'Stellar_mass': 'log($M_{G}/M_{S}$)', 'SFR': '$log(M_{S}/yr)$', 
              'Intra_cluster_mass': '', 'Halo_mass_peak': 'log($M_{G}/M_{S}$)', 
              'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
              'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
-             'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': '', 
-             'Environmental_density': 'log($M_{G}/M_{S}/Mpc^3$)'}
-    
+             'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': ''}
+    if np.shape(galaxies)[1] == 22:
+        data_keys['Environmental_density'] = 20
+        unit_dict['Environmental_density'] = 'log($M_{G}/M_{S}/Mpc^3$)'
+        data_keys['Redshift'] = 21
+        unit_dict['Redshift'] = 'z'
+    else:
+        data_keys['Redshift'] = 20
+        unit_dict['Redshift'] = 'z'
+        
     return galaxies, data_keys, unit_dict
 
 
@@ -41,7 +142,7 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, tota
         subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
         fold_size = int(total_set_size / tot_cv_folds)
         val_indices = subset_indices[cv_fold_nr*fold_size : (cv_fold_nr+1)*fold_size]
-        train_indices = np.delete(subset_indices, val_indices)
+        train_indices = np.concatenate((subset_indices[:cv_fold_nr*fold_size], subset_indices[(cv_fold_nr+1)*fold_size:]))
         test_indices = [0]
         
     else:
@@ -154,6 +255,14 @@ def normalise_data(training_data_dict, norm):
         
     else:
         print('Incorrect norm provided: ', norm)  
+    
+    if 'Redshift' in training_data_dict['input_features']:
+        input_train_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_train[:, 
+                                                            training_data_dict['x_data_keys']['Redshift']] / 100
+        input_val_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_val[:, 
+                                                            training_data_dict['x_data_keys']['Redshift']] / 100
+        input_test_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_test[:, 
+                                                            training_data_dict['x_data_keys']['Redshift']] / 100
         
     if norm['output'] == 'none':
         
@@ -278,7 +387,7 @@ def predict_points(model, training_data_dict, data_type='test'):
         
     return predicted_points
 
-def get_weights(training_data_dict, output_features, outputs_to_weigh):
+def get_weights(training_data_dict, output_features, outputs_to_weigh, weigh_by_redshift=False):
     train_w_tmp = training_data_dict['original_data'][training_data_dict['train_indices'], 
                                         training_data_dict['original_data_keys']['Halo_mass']]
     train_w_tmp = np.power(10, train_w_tmp)
@@ -295,8 +404,26 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh):
             train_weights[output] = train_w_tmp
             val_weights[output] = val_w_tmp
         else:
-            train_weights[output] = np.ones(int(len(training_data_dict['train_indices'])))
-            val_weights[output] = np.ones(int(len(training_data_dict['val_indices'])))
+            train_weights[output] = np.ones(int(len(training_data_dict['train_indices']))) / len(training_data_dict['train_indices'])
+            val_weights[output] = np.ones(int(len(training_data_dict['val_indices']))) / len(training_data_dict['val_indices'])
+            
+    if weigh_by_redshift:
+        train_redshifts = training_data_dict['input_train_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
+        val_redshifts = training_data_dict['input_val_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
+        
+        train_unique_redshifts = np.unique(train_redshifts)
+        val_unique_redshifts = np.unique(val_redshifts)
+        
+        train_redshift_weights = np.zeros(len(train_redshifts))
+        val_redshift_weights = np.zeros(len(val_redshifts))
+        for redshift in train_unique_redshifts:
+            train_redshift_weights[train_redshifts == redshift] = np.sum(train_redshifts == redshift) / len(train_redshifts)
+            VARF:R
+        for redshift in val_unique_redshifts:
+            val_redshift_weights[val_redshifts == redshift] = np.sum(val_redshifts == redshift) / len(val_redshifts)
+            
+        print(np.sum(train_redshift_weights))
+        print(np.sum(val_redshift_weights))
             
     return [train_weights, val_weights]
 

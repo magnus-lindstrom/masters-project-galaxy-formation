@@ -21,3 +21,4 @@ etc/
 .vim*
 *__pycache___
 *.h5
+.lesshst
