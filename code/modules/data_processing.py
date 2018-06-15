@@ -5,7 +5,7 @@ import tensorflow as tf
 import os.path
 
 
-def load_galfiles(redshifts , with_densities=False, equal_numbers=False):
+def load_galfiles(redshifts , with_densities=True, equal_numbers=False):
 
     if with_densities:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
@@ -17,7 +17,7 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False):
         galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift)
         if os.path.isfile(galfile_path):
             galfile = pd.read_hdf(galfile_path)
-            gals = galfile.as_matrix()
+            gals = galfile.values
             gal_header = galfile.keys().tolist()
             
             ### Remove data points with halo mass below 10.5
@@ -66,8 +66,9 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False):
                  'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
                  'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19}
         unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
-                 'Z_vel': '', 'Halo_mass': 'log($M_{H}/M_{S}$)', 'Stellar_mass': 'log($M_{G}/M_{S}$)', 'SFR': '$log(M_{S}/yr)$', 
-                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'log($M_{G}/M_{S}$)', 
+                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': 'M_{G}/M_{\odot}',
+                 'SFR': 'M_{\odot}yr^{-1}', 
+                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
                  'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
                  'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': ''}
@@ -94,7 +95,7 @@ def load_single_galfile(redshift, with_densities=False):
     
     galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift)
     galfile = pd.read_hdf(galfile_path)
-    galaxies = galfile.as_matrix()
+    galaxies = galfile.values
     gal_header = galfile.keys().tolist()
     
     print('shape before modification: ',np.shape(galaxies))
@@ -133,8 +134,8 @@ def load_single_galfile(redshift, with_densities=False):
     return galaxies, data_keys, unit_dict
 
 
-def divide_train_data(galaxies, data_keys, input_features, output_features, total_set_size, train_size=0, val_size=0, test_size=0,
-                      k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0):
+def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, total_set_size, train_size=0, val_size=0,
+                      test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0):
     
     n_data_points = galaxies.shape[0]
     
@@ -189,7 +190,8 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, tota
         'val_indices': val_indices,
         'test_indices': test_indices,
         'original_data': galaxies,
-        'original_data_keys': data_keys
+        'original_data_keys': data_keys,
+        'redshifts': redshifts
     }
     
     return training_data_dict
@@ -417,13 +419,16 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh, weigh_by_
         train_redshift_weights = np.zeros(len(train_redshifts))
         val_redshift_weights = np.zeros(len(val_redshifts))
         for redshift in train_unique_redshifts:
-            train_redshift_weights[train_redshifts == redshift] = np.sum(train_redshifts == redshift) / len(train_redshifts)
-            VARF:R
+            weight = 1 / (len(train_unique_redshifts) * np.sum(train_redshifts == redshift))
+            train_redshift_weights[train_redshifts == redshift] = weight
         for redshift in val_unique_redshifts:
-            val_redshift_weights[val_redshifts == redshift] = np.sum(val_redshifts == redshift) / len(val_redshifts)
-            
-        print(np.sum(train_redshift_weights))
-        print(np.sum(val_redshift_weights))
+            weight = 1 / (len(val_unique_redshifts) * np.sum(val_redshifts == redshift))
+            val_redshift_weights[val_redshifts == redshift] = weight
+        
+        for output in output_features:
+            train_weights[output] = (train_weights[output] + train_redshift_weights) / 2
+            val_weights[output] = (val_weights[output] + val_redshift_weights) / 2
+
             
     return [train_weights, val_weights]
 

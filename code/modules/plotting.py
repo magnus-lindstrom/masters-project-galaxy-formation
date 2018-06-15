@@ -1,45 +1,92 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 from data_processing import predict_points
 from scipy import stats
 import corner
 
-def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, data_type='test',
-                                predicted_points=None):
+def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, redshifts='all', title=None,
+                                 data_type='test', predicted_points=None, n_points=1000, n_columns=3):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('That output feature is not available. Choose between\n%s' % 
               (', '.join(training_data_dict['output_features'])))
         return 
+    if redshifts == 'all':
+        unique_redshifts = np.unique(training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']])
+    else:
+        for redshift in redshifts:
+            if redshift not in training_data_dict['redshifts']:
+                print('The redshift {} was not used for training'.format(redshift))
+                return
+        unique_redshifts = redshifts
+     
+    feat_nr = training_data_dict['y_data_keys'][predicted_feat]
     
     if predicted_points is None:
         predicted_points = predict_points(model, training_data_dict, data_type = data_type)
-    
-    if data_type == 'test':
-        data = training_data_dict['y_test']
-    elif data_type == 'train':
-        data = training_data_dict['y_train']
-    elif data_type == 'val':
-        data = training_data_dict['y_val']
+        
+    n_fig_rows = int(np.ceil(len(unique_redshifts)/n_columns))
+    if len(unique_redshifts) <= n_columns:
+        n_fig_cols = len(unique_redshifts)
     else:
-        print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
+        n_fig_cols = n_columns
+        
+    fig = plt.figure(figsize=(4*n_fig_cols,4*n_fig_rows))
+    ax_list = []
 
-    feat_nr = training_data_dict['y_data_keys'][predicted_feat]
+    global_xmin = 1e20
+    global_xmax = -1e20
+    global_ymin = 1e20
+    global_ymax = -1e20
+    
+    for i_red, redshift in enumerate(unique_redshifts):
+        relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
+        data_redshift = training_data_dict['y_{}'.format(data_type)][relevant_inds, :]
+        pred_points_redshift = predicted_points[relevant_inds, :]
 
-    fig = plt.figure(figsize=(8,8))
+        ax = plt.subplot(n_fig_rows, n_fig_cols, i_red+1)
 
-    plt.plot(data[:,feat_nr], data[:,feat_nr], 'k.')
-    plt.plot(predicted_points[:,feat_nr], data[:,feat_nr], 'g.')
-    plt.ylabel('True %s %s' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
-    plt.xlabel('Predicted %s %s' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
-    plt.legend(['Ideal result', 'predicted ' + predicted_feat], loc='upper center')
+        ax.plot(data_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], 'k.')
+        ax.plot(pred_points_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], 'g.')
+        ax.set_ylabel('$log(%s[%s])$' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
+        ax.set_xlabel('$log(%s_{DNN}[%s])$' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+        if xmin < global_xmin:
+            global_xmin = xmin
+        if xmax > global_xmax:
+            global_xmax = xmax
+        if ymin < global_ymin:
+            global_ymin = ymin
+        if ymax > global_ymax:
+            global_ymax = ymax
+        ax.legend(['Emerge', 'DNN'], loc='upper left')
+        if (i_red % n_fig_cols) is not 0:
+            plt.tick_params(
+                            axis='y',          # changes apply to the x-axis
+                            which='both',      # both major and minor ticks are affected
+                            left=False,     # ticks along the top edge are off
+                            labelright=False)
+        ax_list.append(ax)
+    
+    fig.subplots_adjust(hspace=0, wspace=0)
+    
+    for i_ax, ax in enumerate(ax_list):
+        ax.set_xlim(left=global_xmin, right=global_xmax)
+        ax.set_ylim(bottom=global_ymin, top=global_ymax)
+        
+        
     if title is not None:
-        plt.title(title, y=1.03, fontsize=20)
+        fig.suptitle(title, y=.93, fontsize=20)
+    
+    
     
     return fig
-
-
-
+    
+    
 
 def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, nBins=8, title=None,
                             data_type='test', predicted_points=None):

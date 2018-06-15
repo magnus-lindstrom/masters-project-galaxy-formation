@@ -22,3 +22,4 @@ etc/
 *__pycache___
 *.h5
 .lesshst
+data/
