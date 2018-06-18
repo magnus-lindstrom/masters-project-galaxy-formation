@@ -66,7 +66,7 @@ def load_galfiles(redshifts , with_densities=True, equal_numbers=False):
                  'SFR_obs': 12, 'Halo_radius': 13, 'Concentration': 14, 'Halo_spin': 15, 'Scale_peak_mass': 16, 
                  'Scale_half_mass': 17, 'Scale_last_MajM': 18, 'Type': 19}
         unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
-                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': 'M_{G}/M_{\odot}',
+                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
                  'SFR': 'M_{\odot}yr^{-1}', 
                  'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
@@ -390,6 +390,78 @@ def predict_points(model, training_data_dict, data_type='test'):
     return predicted_points
 
 def get_weights(training_data_dict, output_features, outputs_to_weigh, weigh_by_redshift=False):
+    
+    unique_redshifts = training_data_dict['redshifts']
+    train_w_tmp = np.zeros(len(training_data_dict['train_indices']))
+    val_w_tmp = np.zeros(len(training_data_dict['val_indices']))
+
+    # make the heavier halos more important in every redshift
+    for redshift in unique_redshifts:
+        relevant_train_inds = training_data_dict['original_data'][training_data_dict['train_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
+        relevant_val_inds = training_data_dict['original_data'][training_data_dict['val_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
+
+        train_masses = training_data_dict['original_data'][training_data_dict['train_indices'],
+                                                           training_data_dict['original_data_keys']['Halo_mass']]
+        train_w_redshift = train_masses[relevant_train_inds]
+        train_w_redshift = np.power(10, train_w_redshift)
+        train_w_redshift = train_w_redshift / np.sum(train_w_redshift) 
+        
+        val_masses = training_data_dict['original_data'][training_data_dict['val_indices'],
+                                                           training_data_dict['original_data_keys']['Halo_mass']]
+        val_w_redshift = val_masses[relevant_val_inds]
+        val_w_redshift = np.power(10, val_w_redshift)
+        val_w_redshift = val_w_redshift / np.sum(val_w_redshift) 
+        
+        train_w_tmp[relevant_train_inds] = train_w_redshift
+        val_w_tmp[relevant_val_inds] = val_w_redshift
+    
+    train_w_tmp = train_w_tmp / np.sum(train_w_tmp) 
+    val_w_tmp = val_w_tmp / np.sum(val_w_tmp) 
+    
+ #   print(np.sum(train_w_tmp))
+  #  print(np.sum(val_w_tmp))
+    
+    train_weights = {}
+    val_weights = {}
+
+    for output in output_features:
+        if output in outputs_to_weigh:
+            train_weights[output] = train_w_tmp
+            val_weights[output] = val_w_tmp
+        else:
+            train_weights[output] = np.ones(int(len(training_data_dict['train_indices']))) / len(training_data_dict['train_indices'])
+            val_weights[output] = np.ones(int(len(training_data_dict['val_indices']))) / len(training_data_dict['val_indices'])
+            
+    if weigh_by_redshift:
+        train_redshifts = training_data_dict['input_train_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
+        val_redshifts = training_data_dict['input_val_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
+        
+        train_unique_redshifts = np.unique(train_redshifts)
+        val_unique_redshifts = np.unique(val_redshifts)
+        
+        train_redshift_weights = np.zeros(len(train_redshifts))
+        val_redshift_weights = np.zeros(len(val_redshifts))
+        for redshift in train_unique_redshifts:
+            weight = 1 / (len(train_unique_redshifts) * np.sum(train_redshifts == redshift))
+            train_redshift_weights[train_redshifts == redshift] = weight
+        for redshift in val_unique_redshifts:
+            weight = 1 / (len(val_unique_redshifts) * np.sum(val_redshifts == redshift))
+            val_redshift_weights[val_redshifts == redshift] = weight
+        
+        for output in output_features:
+            train_weights[output] = (train_weights[output] + train_redshift_weights) / 2
+            val_weights[output] = (val_weights[output] + val_redshift_weights) / 2
+            
+  #  print(np.sum(train_weights['Stellar_mass']))
+  #  print(np.sum(train_weights['SFR']))
+
+            
+    return [train_weights, val_weights]
+
+
+def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh_by_redshift=False):
     train_w_tmp = training_data_dict['original_data'][training_data_dict['train_indices'], 
                                         training_data_dict['original_data_keys']['Halo_mass']]
     train_w_tmp = np.power(10, train_w_tmp)
@@ -431,7 +503,6 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh, weigh_by_
 
             
     return [train_weights, val_weights]
-
 
 
 
