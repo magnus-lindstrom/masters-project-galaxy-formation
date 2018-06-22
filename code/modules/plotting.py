@@ -51,8 +51,8 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
 
         true_handle = ax.scatter(data_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], c='b', s=8)
         pred_handle = ax.scatter(pred_points_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], c='r', s=8, alpha=0.3)
-        ax.set_ylabel('$log(%s[%s])$' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
-        ax.set_xlabel('$log(%s_{DNN}[%s])$' % (predicted_feat, unit_dict[predicted_feat]), fontsize=15)
+        ax.set_ylabel('$log([{}])$'.format(unit_dict[predicted_feat]), fontsize=15)
+        ax.set_xlabel('$log(DNN[{}])$'.format(unit_dict[predicted_feat]), fontsize=15)
         xmin, xmax = ax.get_xlim()
         ymin, ymax = ax.get_ylim()
         if xmin < global_xmin:
@@ -95,7 +95,7 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
         ax.text(-5, 1.5, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=20) 
         
     # set one big legend outside the subplots
-    legend = fig.legend( [true_handle, pred_handle], ['Emerge data $\pm 1 \sigma$', 'DNN data $\pm 1 \sigma$'], loc = (0.4, .1), 
+    legend = fig.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.4, .1), 
                fontsize=30, markerscale=7)
  #   legend.legendHandles[0]._legmarker.set_markersize(6)
  #   legend.legendHandles[1]._legmarker.set_markersize(6)
@@ -191,7 +191,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
         bin_pos = np.array([-2,-1]) # (because this makes it work)
         x_label_centers = []
         for iBin in range(nBins):
-            # Every plot adds 2 distributions, one from the Emerge data and one from the DNN data
+            # Every plot adds 2 distributions, one from the Emerge ddata and one from the DNN ddata
             bin_pos += 3 
             true_handle = ax.errorbar(bin_pos[0], bin_means_true[0][iBin], yerr=stds_true[iBin], fmt = 'bo', capsize=5)
             pred_handle = ax.errorbar(bin_pos[1], bin_means_pred[0][iBin], yerr=stds_pred[iBin], fmt = 'ro', capsize=5)
@@ -200,8 +200,8 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
         x_feat_name = get_print_name(binning_feat)
         y_feat_name = get_print_name(predicted_feat)
 
-        ax.set_ylabel('log({}$[{}])$'.format(y_feat_name, unit_dict[predicted_feat]), fontsize=12)
-        ax.set_xlabel('log({}$_{{Emerge}}[{}])$'.format(x_feat_name, unit_dict[binning_feat]), fontsize=12)
+        ax.set_ylabel('log($[{}])$'.format(unit_dict[predicted_feat]), fontsize=12)
+        ax.set_xlabel('log(Emerge$[{}])$'.format(unit_dict[binning_feat]), fontsize=12)
         ax.set_xlim(left=x_label_centers[0]-2, right=x_label_centers[-1]+2)
 
         # set the xticks to be where the bin centers are and with the x-value of the bin centers
@@ -247,7 +247,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
     # eliminate space between plots
     fig.subplots_adjust(hspace=0, wspace=0)
     # set one big legend outside the subplots
-    fig.legend( [true_handle, pred_handle], ['Emerge data $\pm 1 \sigma$', 'DNN data $\pm 1 \sigma$'], loc = (0.4, .1), 
+    fig.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.4, .1), 
                fontsize=30)
 
     if title is not None:
@@ -287,7 +287,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, redshifts=
     y_feat_name = get_print_name('Stellar_mass')
  
     x_label = 'log({}$_{{Emerge}}[{}])$'.format(x_feat_name, unit_dict['Halo_mass'])
-    y_label = 'log({}$[{}])$'.format(y_feat_name, unit_dict['Stellar_mass'])
+    y_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
 
      
     n_fig_rows = np.ceil(int(len(unique_redshifts) / n_redshifts_per_row))
@@ -423,9 +423,9 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, redshifts='
     x_feat_name = get_print_name('Stellar_mass')
     y_feat_name = get_print_name('SFR')
  
-    true_x_label = 'log({}$_{{Emerge}}[{}])$'.format(x_feat_name, unit_dict['Stellar_mass'])
-    predicted_x_label = 'log({}$_{{DNN}}[{}])$'.format(x_feat_name, unit_dict['Stellar_mass'])
-    y_label = 'log({}$[{}])$'.format(y_feat_name, unit_dict['SFR'])
+    true_x_label = 'log(Emerge$[{}])$'.format(unit_dict['Stellar_mass'])
+    predicted_x_label = 'log(DNN$[{}])$'.format(unit_dict['Stellar_mass'])
+    y_label = 'log($[{}])$'.format(unit_dict['SFR'])
 
     n_fig_rows = np.ceil(int(len(unique_redshifts) / n_redshifts_per_row))
     if n_redshifts_per_row == 2 and len(unique_redshifts) > 1:
