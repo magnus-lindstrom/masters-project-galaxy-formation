@@ -84,9 +84,11 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_gr
         print('No files with the specified redshifts found.')
         return 
 
-def load_single_galfile(redshift, with_densities=True):
+def load_single_galfile(redshift, with_densities=True, with_growth=True):
     
-    if with_densities:
+    if with_growth:
+        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density_with_growth_rate_no_lastMajM/'
+    elif with_densities:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
     else:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
@@ -223,7 +225,6 @@ def normalise_data(training_data_dict, norm):
         
     elif norm['input'] == 'zero_mean_unit_std':
 
-        #for i in range(np.size(x_train, 1)):
         x_data_means = np.mean(x_train, 0)
         x_data_stds = np.std(x_train, 0)
 
@@ -274,7 +275,6 @@ def normalise_data(training_data_dict, norm):
     
     elif norm['output'] == 'zero_mean_unit_std':
             
-        #for i in range(np.size(y_train, 1)):
         y_data_means = np.mean(y_train, 0)
         y_data_stds = np.std(y_train, 0)
 
