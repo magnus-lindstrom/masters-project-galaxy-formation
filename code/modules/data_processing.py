@@ -84,7 +84,7 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_gr
         print('No files with the specified redshifts found.')
         return 
 
-def load_single_galfile(redshift, with_densities=True, with_growth=True):
+def load_single_galfile(redshift, with_densities=False, with_growth=True):
     
     if with_growth:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density_with_growth_rate_no_lastMajM/'
@@ -93,7 +93,7 @@ def load_single_galfile(redshift, with_densities=True, with_growth=True):
     else:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
     
-    galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift)
+    galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift*10)
     galfile = pd.read_hdf(galfile_path)
     galaxies = galfile.values
     gal_header = galfile.keys().tolist()

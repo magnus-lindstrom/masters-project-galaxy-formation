@@ -4,7 +4,7 @@ from keras.models import Sequential, Model, load_model
 from keras.layers import Input, Dense, LeakyReLU, concatenate
 
 def standard_network(input_features, output_features, neurons_per_layer, nr_layers, act_fun, output_activation, 
-                     reg_strength, clipvalue=0, alpha=0.01, loss='mse'):
+                     reg_strength, clipvalue=0.5, alpha=0.01, loss='mse'):
     
     main_input = Input(shape=(len(input_features),), name = 'main_input')
 
