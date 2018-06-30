@@ -258,12 +258,13 @@ def normalise_data(training_data_dict, norm):
     else:
         print('Incorrect norm provided: ', norm)  
     
-    if 'Redshift' in training_data_dict['input_features']:
-        input_train_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_train[:, 
-                                                            training_data_dict['x_data_keys']['Redshift']] / 100
-        input_val_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_val[:, 
-                                                            training_data_dict['x_data_keys']['Redshift']] / 100
-        input_test_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_test[:, 
+    # what is this?
+#     if 'Redshift' in training_data_dict['input_features']:
+#         input_train_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_train[:, 
+#                                                             training_data_dict['x_data_keys']['Redshift']] / 100
+#         input_val_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_val[:, 
+#                                                             training_data_dict['x_data_keys']['Redshift']] / 100
+#         input_test_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_test[:, 
                                                             training_data_dict['x_data_keys']['Redshift']] / 100
         
     if norm['output'] == 'none':

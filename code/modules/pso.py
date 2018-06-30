@@ -3,11 +3,12 @@ import time
 import datetime
 from keras.models import Sequential
 from keras.layers import Dense
+from model_setup import *
 
 class Feed_Forward_Neural_Network():
     
     def __init__(self, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function):
+                 activation_function, output_activation, reg_strength, outputs_to_weigh):
         
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -15,19 +16,23 @@ class Feed_Forward_Neural_Network():
         self.output_features = output_features
         self.activation_function = activation_function
         
-        self.model = None
+        self.model = standard_network(input_features, output_features, neurons_per_layer, nr_layers, activation_function, 
+                                      output_activation, reg_strength)
         
-    def pso_setup(self, pso_param_dict={}):
+        self.train_weights, self.val_weights, self.test_weights = get_weights(training_data_dict, output_features, outputs_to_weigh, 
+                                                                              weigh_by_redshift=False)
+        
+    def setup_pso(self, pso_param_dict={}):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
                                    self.output_features, self.activation_function, pso_param_dict=pso_param_dict)
         
-    def pso_train(self, nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check=None, 
+    def train_pso(self, nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check=None, 
                   speed_check=False, std_penalty=False):
         
         self.pso_swarm.train_network(nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check, speed_check,
-                                    std_penalty)
-
+                                     std_penalty)
+        
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
@@ -56,13 +61,18 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     break
         
         self.parent = parent
-        self.nr_variables = (nr_hidden_layers-1)*nr_neurons_per_lay**2 + \
-            (len(input_features)+len(output_features)+nr_hidden_layers)*nr_neurons_per_lay + len(output_features)
+        self.nr_variables = self.parent.model.count_params()
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
         self.activation_function = activation_function
         self.input_features = input_features
         self.output_features = output_features
+        
+        weights = model.get_weights()
+        self.weight_shapes = []
+        
+        for mat in weights:
+            self.weight_shapes.append(np.shape(mat))
         
         self.best_weights_train = None
         self.best_weights_val = None
@@ -74,33 +84,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         self.initialise_swarm()
         
-    def set_up_model(self):
-        
-        self.model = Sequential()
-        self.model.add(Dense(self.nr_neurons_per_lay, input_dim = len(self.input_features), 
-                             activation = self.activation_function))
-    
-        for i in range(0, self.nr_hidden_layers-1):
-            self.model.add(Dense(self.nr_neurons_per_lay, activation = self.activation_function))
-
-        self.model.add(Dense(len(self.output_features), activation = None))
-                
-        # always give the model mse loss. When evaluating the particles, the actual loss will be taken into account
-        self.model.compile(loss='mse', optimizer='adam')
-        
     def train_network(self, nr_iterations, training_data_dict, loss_function, nr_iters_before_restart_check, speed_check,
                      std_penalty):
         
-        if loss_function == 'halo_mass_weighted_loss':
-        
-            self.real_halo_masses = {}
-            log_halo_masses = training_data_dict['x_train'][:, training_data_dict['x_data_keys']['Halo_mass']]
-            self.real_halo_masses['train'] = np.power(10, log_halo_masses)
-            log_halo_masses = training_data_dict['x_val'][:, training_data_dict['x_data_keys']['Halo_mass']]
-            self.real_halo_masses['val'] = np.power(10, log_halo_masses)
-            log_halo_masses = training_data_dict['x_test'][:, training_data_dict['x_data_keys']['Halo_mass']]
-            self.real_halo_masses['test'] = np.power(10, log_halo_masses)
-
         self.training_data_dict = training_data_dict
         self.loss_function = loss_function
         self.nr_iterations_trained = nr_iterations
@@ -109,13 +95,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         with open('progress.txt', 'w+') as f:
 
             # make sure the output isn't just the same
-            shouldStartFresh = 1
+            shouldStartFresh = True
             while shouldStartFresh:
                 shouldStartFresh = 0
 
-                inertia_weight_reduction = np.exp(np.log(self.pso_param_dict['inertiaWeightMin'] / 
-                                            self.pso_param_dict['inertiaWeightStart']) / 
-                                            self.pso_param_dict['explorationFraction'] / nr_iterations)
+                inertia_weight_reduction = np.exp(np.log(self.pso_param_dict['inertiaWeightMin'] 
+                                                         / self.pso_param_dict['inertiaWeightStart'])
+                                                         / self.pso_param_dict['explorationFraction'] 
+                                                         / nr_iterations)
                 inertia_weight = self.pso_param_dict['inertiaWeightStart']
 
                 self.progress = 0
@@ -126,7 +113,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 self.avg_speed_before_history = []
                 self.avg_speed_after_history = []
                     
-                lastTimeSwarmBest = 0
+                time_since_swarm_best = 0
                 
                 self.initialise_swarm()
 
@@ -138,7 +125,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     if (int(iteration/10) == iteration/10) and (iteration > 0):
                         # see if network has run into a local minima   
                         if nr_iters_before_restart_check is not None:
-                            if (iteration - lastTimeSwarmBest) > nr_iters_before_restart_check:
+                            if (iteration - time_since_swarm_best) > nr_iters_before_restart_check:
                                 self.set_weights(self.best_weights_val)
                                 y_pred = self.predict_output('val')
 
@@ -159,7 +146,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         f.write('Time remaining: %dmin.\n' % (time_remaining))
                         f.flush()
 
-                    for iParticle, particle in enumerate(self.particle_list):
+                    for i_particle, particle in enumerate(self.particle_list):
                         
                         train_score = particle.evaluate_particle('train')
 
@@ -215,9 +202,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
     def predict_output(self, mode):
         
         if self.training_data_dict['norm'] == 'none':
-            y_pred = self.model.predict(self.training_data_dict['x_'+mode])
+            y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode])
         else:
-            y_pred = self.model.predict(self.training_data_dict['x_'+mode+'_norm'])
+            y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode+'_norm'])
 
         return y_pred
     
@@ -270,14 +257,6 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('Average speed of the particles after normalization is: %.2f' % (avg_speed_after))
             f.flush()
             
-            
-    def set_weights(self, weightList):
-        
-        weightMatrixList = weightList[0]
-        biasList = weightList[1]
-        for i in range(len(weightMatrixList)):
-            self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
-            
     def set_best_weights(self, mode):
         if mode == 'train':
             weightMatrixList = self.best_weights_train[0]
@@ -287,7 +266,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             biasList = self.best_weights_val[1]
             
         for i in range(len(weightMatrixList)):
-            self.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
+            self.parent.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
             
             
     def evaluate_model(self, mode):
@@ -297,7 +276,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         else:
             additional_ending = mode + '_norm'
             
-        y_pred = self.model.predict(self.training_data_dict['x_'+additional_ending])
+        y_pred = self.parent.model.predict(self.training_data_dict['x_'+additional_ending])
     
         if self.loss_function == 'mse':
             n_points, n_outputs = np.shape(y_pred)
@@ -307,9 +286,6 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             score = np.sum(feature_scores)
             
         elif self.loss_function == 'halo_mass_weighted_loss':
-            TODO: is it a stupid idea to change the objective function as the training proceeds? 
-                the plan below was to add the weights in increments, not starting with the full weights.
-                I guess it might be stupid..
             
             end_weights = self.real_halo_masses[mode] / np.sum(self.real_halo_masses[mode])
             weights = np.ones(self.real_halo_masses[mode]) 
@@ -350,12 +326,10 @@ class PSO_Particle(PSO_Swarm):
         self.best_score = 1e20
         self.best_position = self.position
         
-        
-        
     def evaluate_particle(self, mode):
         
-        weightList = self.get_weights()
-        self.parent.set_weights(weightList)
+        weight_mat_list = self.get_weights()
+        self.parent.parent.model.set_weights(weight_mat_list)
         
         score = self.parent.evaluate_model(mode)
         
@@ -364,59 +338,72 @@ class PSO_Particle(PSO_Swarm):
             self.best_position = self.position
             
         return score
+            
+    def get_weights(self): # get the weight list corresponding to the position in parameter space
         
-    def get_weights(self): # sets the weights from the current pos in parameter space
+        weight_mat_list = [] # will contain the weight matrices 
+        weight_counter = 0 # to help assign weights and biases to their correct matrix
         
-        weightMatrixList = [] # will contain a list of all the weight matrices 
-        biasList = []   # will contain a list of all the biases
+        for mat_shape in self.parent.weight_shapes:
+            nr_weights = np.prod(mat_shape)
+            weights = self.position[weight_counter : weight_counter+nr_weights]
+            mat = np.reshape(weights, mat_shape)
+            weight_mat_list.append(mat)
+        
+        return weight_mat_list
+        
+    def get_weights_old(self): # get the weight list corresponding to the position in parameter space
+        
+        weight_matrix_list = [] # will contain the weight matrices 
+        bias_list = []   # will contain the biases
 
-        weightCounter = 0 # to help assign weights and biases to their correct matrix
+        weight_counter = 0 # to help assign weights and biases to their correct matrix
 
         ### Extract weight matrices
         input_dim = len(self.parent.input_features)
         output_dim = len(self.parent.output_features)
-        weightMatrix = np.zeros((input_dim, self.parent.nr_neurons_per_lay)) 
+        weight_matrix = np.zeros((input_dim, self.parent.nr_neurons_per_lay)) 
         for i in range(input_dim):  
-            weightMatrix[i,:] = self.position[weightCounter:weightCounter+self.parent.nr_neurons_per_lay]
-            weightCounter += self.parent.nr_neurons_per_lay
-        weightMatrixList.append(weightMatrix)
+            weight_matrix[i,:] = self.position[weight_counter : weight_counter+self.parent.nr_neurons_per_lay]
+            weight_counter += self.parent.nr_neurons_per_lay
+        weight_matrix_list.append(weight_matrix)
 
         
         for iLayer in range(self.parent.nr_hidden_layers-1):
-            weightMatrix = np.zeros((self.parent.nr_neurons_per_lay, self.parent.nr_neurons_per_lay))
+            weight_matrix = np.zeros((self.parent.nr_neurons_per_lay, self.parent.nr_neurons_per_lay))
             for iNeuron in range(self.parent.nr_neurons_per_lay):
 
-                weightMatrix[iNeuron,:] = self.position[weightCounter:weightCounter+self.parent.nr_neurons_per_lay]
-                weightCounter += self.parent.nr_neurons_per_lay
+                weight_matrix[iNeuron,:] = self.position[weight_counter : weight_counter+self.parent.nr_neurons_per_lay]
+                weight_counter += self.parent.nr_neurons_per_lay
 
-            weightMatrixList.append(weightMatrix)
+            weight_matrix_list.append(weight_matrix)
 
-        weightMatrix = np.zeros((self.parent.nr_neurons_per_lay, output_dim))
+        weight_matrix = np.zeros((self.parent.nr_neurons_per_lay, output_dim))
         for i in range(self.parent.nr_neurons_per_lay):  
-            weightMatrix[i,:] = self.position[weightCounter:weightCounter+output_dim]
-            weightCounter += output_dim
+            weight_matrix[i,:] = self.position[weight_counter:weight_counter+output_dim]
+            weight_counter += output_dim
 
-        weightMatrixList.append(weightMatrix)
+        weight_matrix_list.append(weight_matrix)
 
         ### Extract bias vectors
         for iLayer in range(self.parent.nr_hidden_layers):
 
-            biasVector = self.position[weightCounter:weightCounter+self.parent.nr_neurons_per_lay]
-            weightCounter += self.parent.nr_neurons_per_lay
+            bias_vector = self.position[weight_counter : weight_counter+self.parent.nr_neurons_per_lay]
+            weight_counter += self.parent.nr_neurons_per_lay
 
-            biasList.append(biasVector)
+            bias_list.append(bias_vector)
 
-        biasVector = np.zeros(output_dim)
-        biasVector = self.position[weightCounter:weightCounter+output_dim] # for the output layer
-        biasList.append(biasVector)
+        bias_vector = np.zeros(output_dim)
+        bias_vector = self.position[weight_counter : weight_counter+output_dim] # for the output layer
+        bias_list.append(bias_vector)
 
-        weightCounter += output_dim
+        weight_counter += output_dim
         
-        weightList = [weightMatrixList, biasList]
+        weight_list = [weight_matrix_list, bias_list]
 
-        #print(weightCounter == len(self.position))  # a check if the number of variables is correct
+        #print(weight_counter == len(self.position))  # a check if the number of variables is correct
         
-        return weightList
+        return weight_list
 
     def update_particle(self):
 

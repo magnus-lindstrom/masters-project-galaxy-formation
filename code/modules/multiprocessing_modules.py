@@ -6,7 +6,7 @@ def train_net(parameters):
 
     (galaxies, data_keys, redshifts, total_set_size, train_size, val_size, test_size, 
      input_features, output_features, outputs_to_weigh, weigh_by_redshift, neur_per_lay, nr_lay, act_fun, 
-     output_activation, norm, reg_strength, nr_epochs, batch_size, nr_folds, 
+     output_activation, norm, reg_strength, nr_epochs, batch_size, 
      progress_file, verb, early_stop_min_delta, early_stop_patience, param_id) = parameters
     
     training_data_dict = divide_train_data(galaxies, data_keys, input_features, 
@@ -33,18 +33,21 @@ def train_net(parameters):
 
     train_history = None
     val_history = None
-    score = None
+    test_score = None
     
     if 'loss' in history.history:
-        train_historiy = history.history['loss']
+        train_history = history.history['loss']
     if 'val_loss' in history.history:
         val_history = history.history['val_loss']
-        score = np.amin(history.history['val_loss'])
+        norm_scores = model.evaluate(x=training_data_dict['input_test_dict'], y=training_data_dict['output_test_dict'],
+                                               sample_weight=test_weights, verbose=verb)
+        test_score = norm_scores[0]
+    
         
 
     parameters = {'inp_norm': norm['input'], 'nr_lay': nr_lay, 'neur_per_lay': neur_per_lay, 
                  'act_fun': act_fun, 'batch_size': batch_size, 'reg_strength': reg_strength}
-    results = [parameters, score, train_historiy, val_history, param_id]
+    results = [parameters, test_score, train_history, val_history, param_id]
     
     # lock write lock
     lock.acquire()
@@ -53,7 +56,7 @@ def train_net(parameters):
     lastline = data[-1]
     progress, tot_jobs = lastline.split('/')
     progress = int(progress)
-    progress += nr_folds
+    progress += 1
     progress = '{:d}'.format(progress)
     with open(progress_file, 'a') as f:
         f.write('\n{}/{}'.format(progress, tot_jobs))
