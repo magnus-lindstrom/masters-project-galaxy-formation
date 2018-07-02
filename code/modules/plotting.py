@@ -290,7 +290,8 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, redshifts=
     y_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
 
      
-    n_fig_rows = np.ceil(int(len(unique_redshifts) / n_redshifts_per_row))
+    n_fig_rows = int(np.ceil(len(unique_redshifts) / n_redshifts_per_row))
+    print(n_fig_rows)
     if n_redshifts_per_row == 2 and len(unique_redshifts) > 1:
         n_fig_columns = 4
     else:
@@ -305,6 +306,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, redshifts=
     global_ymin = float('Inf')
     global_ymax = -float('Inf')
 
+    print(unique_redshifts)
     for i_red, redshift in enumerate(unique_redshifts):
         
         # get the indeces of the train/val/test data that have the current redshift
@@ -314,6 +316,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, redshifts=
         true_y_data_redshift = true_y_data[relevant_inds]
         predicted_y_data_redshift = predicted_y_data[relevant_inds]
         
+        print(n_fig_rows, n_fig_columns, i_red * 2 + 1)
         ax_pred = plt.subplot(n_fig_rows, n_fig_columns, i_red * 2 + 1)
 
         ax_pred.plot(x_data_redshift, predicted_y_data_redshift, 'r.', markersize=2)

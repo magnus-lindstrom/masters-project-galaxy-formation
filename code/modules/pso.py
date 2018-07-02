@@ -4,11 +4,12 @@ import datetime
 from keras.models import Sequential
 from keras.layers import Dense
 from model_setup import *
+from data_processing import get_weights, predict_points
 
 class Feed_Forward_Neural_Network():
     
     def __init__(self, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, output_activation, reg_strength, outputs_to_weigh):
+                 activation_function, output_activation, reg_strength):
         
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -16,22 +17,19 @@ class Feed_Forward_Neural_Network():
         self.output_features = output_features
         self.activation_function = activation_function
         
-        self.model = standard_network(input_features, output_features, neurons_per_layer, nr_layers, activation_function, 
+        self.model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, activation_function, 
                                       output_activation, reg_strength)
-        
-        self.train_weights, self.val_weights, self.test_weights = get_weights(training_data_dict, output_features, outputs_to_weigh, 
-                                                                              weigh_by_redshift=False)
         
     def setup_pso(self, pso_param_dict={}):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
                                    self.output_features, self.activation_function, pso_param_dict=pso_param_dict)
         
-    def train_pso(self, nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check=None, 
+    def train_pso(self, nr_iterations, training_data_dict, weigh_by_redshift, outputs_to_weigh, nr_iters_before_restart_check=None, 
                   speed_check=False, std_penalty=False):
         
-        self.pso_swarm.train_network(nr_iterations, training_data_dict, loss_func_dict, nr_iters_before_restart_check, speed_check,
-                                     std_penalty)
+        self.pso_swarm.train_network(nr_iterations, training_data_dict, nr_iters_before_restart_check,
+                                     std_penalty, weigh_by_redshift, outputs_to_weigh, speed_check)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -68,7 +66,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.input_features = input_features
         self.output_features = output_features
         
-        weights = model.get_weights()
+        weights = self.parent.model.get_weights()
         self.weight_shapes = []
         
         for mat in weights:
@@ -79,16 +77,21 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         self.inertia_weight = self.pso_param_dict['inertiaWeightStart']
         self.vMax = (self.pso_param_dict['xMax']-self.pso_param_dict['xMin']) / self.pso_param_dict['deltaT']
-        
-        self.set_up_model()
-        
+                
         self.initialise_swarm()
         
-    def train_network(self, nr_iterations, training_data_dict, loss_function, nr_iters_before_restart_check, speed_check,
-                     std_penalty):
+    def train_network(self, nr_iterations, training_data_dict, nr_iters_before_restart_check,
+                     std_penalty, weigh_by_redshift, outputs_to_weigh, speed_check):
         
         self.training_data_dict = training_data_dict
-        self.loss_function = loss_function
+        train_weights, val_weights, test_weights = get_weights(training_data_dict, self.output_features, outputs_to_weigh, 
+                                                               weigh_by_redshift)
+        self.data_weights = {
+            'train': train_weights,
+            'val': val_weights,
+            'test': test_weights
+        }
+        
         self.nr_iterations_trained = nr_iterations
         self.std_penalty = std_penalty
         
@@ -120,14 +123,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 glob_start = time.time()
                 for iteration in range(nr_iterations):
                     
+                    time_since_swarm_best += 1
                     self.progress = iteration / nr_iterations
 
                     if (int(iteration/10) == iteration/10) and (iteration > 0):
                         # see if network has run into a local minima   
                         if nr_iters_before_restart_check is not None:
-                            if (iteration - time_since_swarm_best) > nr_iters_before_restart_check:
-                                self.set_weights(self.best_weights_val)
-                                y_pred = self.predict_output('val')
+                            if time_since_swarm_best > nr_iters_before_restart_check:
+                                self.set_best_weights('val')
+                                y_pred = predict_points(self.parent.model, self.training_data_dict, 
+                                                                 original_units=False, mode='val')
+#                                 print(y_pred)
 
                                 stds = np.std(y_pred, axis=0)
                                 print('standard deviations of predicted parameters (validation set): ', stds)
@@ -156,7 +162,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                             
                             self.best_weights_train = particle.get_weights()
                         
-                            lastTimeSwarmBest = iteration
+                            time_since_swarm_best = 0
                             self.swarm_best_train = train_score
                             self.swarm_best_position = particle.position
                             
@@ -169,9 +175,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                             self.trainingScoreHistory.append(train_score)
 
                             print('Iteration %d, particle %d, new swarm best. Train: %.3e, Val: %.3e' % (iteration, 
-                                                            iParticle, train_score, val_score))
+                                                            i_particle, train_score, val_score))
                             f.write('Iteration %d, particle %d, new swarm best. Train: %.3e, Val: %.3e\n' % (iteration, 
-                                                            iParticle, train_score, val_score))
+                                                            i_particle, train_score, val_score))
                             f.flush()
 
 
@@ -199,7 +205,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.flush()
         return inertia_weight
         
-    def predict_output(self, mode):
+    def predict_output_old(self, mode):
         
         if self.training_data_dict['norm'] == 'none':
             y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode])
@@ -259,17 +265,28 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
     def set_best_weights(self, mode):
         if mode == 'train':
-            weightMatrixList = self.best_weights_train[0]
-            biasList = self.best_weights_train[1]
+            self.parent.model.set_weights(self.best_weights_train)
         elif mode == 'val':
-            weightMatrixList = self.best_weights_val[0]
-            biasList = self.best_weights_val[1]
-            
-        for i in range(len(weightMatrixList)):
-            self.parent.model.layers[i].set_weights([weightMatrixList[i], biasList[i]])
-            
-            
+            self.parent.model.set_weights(self.best_weights_val)
+        
     def evaluate_model(self, mode):
+            
+        y_pred = predict_points(self.parent.model, self.training_data_dict, original_units=False, as_lists=False, mode=mode)
+        n_points = np.shape(y_pred[0])
+        
+        score = 0
+        for i_output, output in enumerate(self.output_features):
+#             print('y_pred:',y_pred)
+#             print('y_true:',self.training_data_dict['output_'+mode+'_dict'][output])
+            diff = y_pred[:, i_output] - self.training_data_dict['output_'+mode+'_dict'][output]
+            squares = np.power(diff, 2) / n_points
+            weighted_squares = squares * self.data_weights[mode][output] / np.sum(self.data_weights[mode][output])
+            feature_score = np.sum(squares)
+            score += np.sum(feature_score)
+            
+        return score
+            
+    def evaluate_model_old(self, mode):
     
         if self.training_data_dict['norm'] == 'none':
             additional_ending = mode
@@ -349,7 +366,9 @@ class PSO_Particle(PSO_Swarm):
             weights = self.position[weight_counter : weight_counter+nr_weights]
             mat = np.reshape(weights, mat_shape)
             weight_mat_list.append(mat)
+            weight_counter += nr_weights
         
+#         print(weight_counter, self.parent.nr_variables)
         return weight_mat_list
         
     def get_weights_old(self): # get the weight list corresponding to the position in parameter space

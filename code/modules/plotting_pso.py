@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from data_processing_pso import predict_points
+from data_processing import predict_points
 from scipy import stats
 
 def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, title=None, mode='test'):
@@ -10,7 +10,7 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
               (', '.join(training_data_dict['output_features'])))
         return 
     
-    predicted_points = predict_points(model, training_data_dict, mode)
+    predicted_points = predict_points(model, training_data_dict, mode=mode)
     
     if mode == 'test':
         data = training_data_dict['y_test']
@@ -20,7 +20,6 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
         data = training_data_dict['y_val']
     else:
         print('Please enter a valid mode (\'train\', \'val\' or \'test\')')
-
     
     feat_nr = training_data_dict['y_data_keys'][predicted_feat]
 

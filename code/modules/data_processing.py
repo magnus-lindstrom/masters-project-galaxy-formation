@@ -265,7 +265,7 @@ def normalise_data(training_data_dict, norm):
 #         input_val_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_val[:, 
 #                                                             training_data_dict['x_data_keys']['Redshift']] / 100
 #         input_test_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_test[:, 
-                                                            training_data_dict['x_data_keys']['Redshift']] / 100
+#                                                            training_data_dict['x_data_keys']['Redshift']] / 100
         
     if norm['output'] == 'none':
         
@@ -339,53 +339,62 @@ def get_test_score(model, training_data_dict, norm):
     return test_score
 
 
-def predict_points(model, training_data_dict, data_type='test'):
+def predict_points(model, training_data_dict, original_units=True, as_lists=False, mode='test'):
 
-    if data_type == 'train':
+    if mode == 'train':
         predicted_norm_points = model.predict(training_data_dict['input_train_dict'])
-    elif data_type == 'val':
+    elif mode == 'val':
         predicted_norm_points = model.predict(training_data_dict['input_val_dict'])
-    elif data_type == 'test':
+    elif mode == 'test':
         predicted_norm_points = model.predict(training_data_dict['input_test_dict'])
     else:
         print('Please enter a valid data type (\'train\', \'val\' or \'test\')')
         
     if len(training_data_dict['output_features']) == 1:
+        
+        if original_units:
 
-        if training_data_dict['norm']['output'] == 'zero_mean_unit_std':
-            for i in range(len(training_data_dict['output_features'])):
-                predicted_points = predicted_norm_points * training_data_dict['y_data_stds'] + \
-                                       training_data_dict['y_data_means']
+            if training_data_dict['norm']['output'] == 'zero_mean_unit_std':
+                for i in range(len(training_data_dict['output_features'])):
+                    predicted_points = predicted_norm_points * training_data_dict['y_data_stds'] + \
+                                           training_data_dict['y_data_means']
 
-        elif training_data_dict['norm']['output'] == 'zero_to_one':
-            for i in range(len(training_data_dict['output_features'])):
-                predicted_points = predicted_norm_points * (training_data_dict['y_data_max'] - \
-                                       training_data_dict['y_data_min']) + training_data_dict['y_data_min']
+            elif training_data_dict['norm']['output'] == 'zero_to_one':
+                for i in range(len(training_data_dict['output_features'])):
+                    predicted_points = predicted_norm_points * (training_data_dict['y_data_max'] - \
+                                           training_data_dict['y_data_min']) + training_data_dict['y_data_min']
+                    
+            elif training_data_dict['norm']['output'] == 'none':
+                predicted_points = predicted_norm_points
 
-        elif training_data_dict['norm']['output'] == 'none':
+        else:
             predicted_points = predicted_norm_points
         
         
     else:
-        
-        predicted_points = []
-        if training_data_dict['norm']['output'] == 'zero_mean_unit_std':
-            for i in range(len(training_data_dict['output_features'])):
-                predicted_points.append(predicted_norm_points[i] * training_data_dict['y_data_stds'][i] + 
-                                       training_data_dict['y_data_means'][i])
 
-        elif training_data_dict['norm']['output'] == 'zero_to_one':
-            for i in range(len(training_data_dict['output_features'])):
-                predicted_points.append(predicted_norm_points[i] * (training_data_dict['y_data_max'][i] - 
-                                       training_data_dict['y_data_min'][i]) + training_data_dict['y_data_min'][i])
+        if original_units:
+            predicted_points = []
+            if training_data_dict['norm']['output'] == 'zero_mean_unit_std':
+                for i in range(len(training_data_dict['output_features'])):
+                    predicted_points.append(predicted_norm_points[i] * training_data_dict['y_data_stds'][i] + 
+                                           training_data_dict['y_data_means'][i])
 
-        elif training_data_dict['norm']['output'] == 'none':
+            elif training_data_dict['norm']['output'] == 'zero_to_one':
+                for i in range(len(training_data_dict['output_features'])):
+                    predicted_points.append(predicted_norm_points[i] * (training_data_dict['y_data_max'][i] - 
+                                           training_data_dict['y_data_min'][i]) + training_data_dict['y_data_min'][i])
+                    
+            elif training_data_dict['norm']['output'] == 'none':
+                predicted_points = predicted_norm_points
+
+        else:
             predicted_points = predicted_norm_points
             
-        predicted_points = np.asarray(predicted_points)
-        predicted_points = np.squeeze(predicted_points, axis = -1)
-        predicted_points = np.transpose(predicted_points)  
-        
+        if not as_lists:
+            predicted_points = np.asarray(predicted_points)
+            predicted_points = np.squeeze(predicted_points, axis = -1)
+            predicted_points = np.transpose(predicted_points)          
         
     return predicted_points
 
