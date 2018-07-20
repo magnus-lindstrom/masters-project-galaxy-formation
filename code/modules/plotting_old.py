@@ -1,13 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units
+from data_processing import predict_points
 from scipy import stats
 import corner
 
-def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, pso=False, 
-                                 galaxies=None, redshifts='all', title=None, data_type='test', predicted_points=None, 
-                                 n_points=1000, n_columns=3):
+def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, galaxies=None, redshifts='all', 
+                                 title=None, data_type='test', predicted_points=None, n_points=1000, n_columns=3):
     
     if not predicted_feat in training_data_dict['output_features']:
         print('That output feature is not available. Choose between\n%s' % 
@@ -22,10 +21,10 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
                 return
         unique_redshifts = redshifts
      
-    feat_nr = training_data_dict['output_features'].index(predicted_feat)
+    feat_nr = training_data_dict['y_data_keys'][predicted_feat]
     
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type, original_units=True)
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
     n_fig_rows = int(np.ceil(len(unique_redshifts)/n_columns))
     if len(unique_redshifts) <= n_columns:
@@ -42,19 +41,15 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
     global_ymax = -float('Inf')
     
     for i_red, redshift in enumerate(unique_redshifts):
-        relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
-#         relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
-#                                                               training_data_dict['original_data_keys']['Redshift']] == redshift
-        if pso:
-            data_redshift = training_data_dict['y_{}'.format(data_type)][relevant_inds, feat_nr]
-        else:
-            data_redshift = training_data_dict['output_{}_dict'.format(data_type)][predicted_feat]
+        relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
+        data_redshift = training_data_dict['y_{}'.format(data_type)][relevant_inds, :]
         pred_points_redshift = predicted_points[relevant_inds, :]
 
         ax = plt.subplot(n_fig_rows, n_fig_cols, i_red+1)
 
-        true_handle = ax.scatter(data_redshift[:n_points], data_redshift[:n_points], c='b', s=8)
-        pred_handle = ax.scatter(pred_points_redshift[:n_points, feat_nr], data_redshift[:n_points], c='r', s=8, alpha=0.3)
+        true_handle = ax.scatter(data_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], c='b', s=8)
+        pred_handle = ax.scatter(pred_points_redshift[:n_points, feat_nr], data_redshift[:n_points, feat_nr], c='r', s=8, alpha=0.3)
         ax.set_ylabel('$log([{}])$'.format(unit_dict[predicted_feat]), fontsize=15)
         ax.set_xlabel('$log(DNN[{}])$'.format(unit_dict[predicted_feat]), fontsize=15)
         xmin, xmax = ax.get_xlim()
@@ -112,7 +107,7 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys
     
     
 
-def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, pso=False, galaxies=None, 
+def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, binning_feat, galaxies=None, 
                              redshifts='all', nBins=8, title=None, data_type='test', predicted_points=None, n_points=1000, 
                              n_columns=3):
     
@@ -120,10 +115,11 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
         print('Predicted feature not available (%s). Choose between\n%s' % 
               (predicted_feat, ', '.join(training_data_dict['output_features'])))
         return 
-    pred_feat_nr = training_data_dict['output_features'].index(predicted_feat)
+    pred_feat_nr = training_data_dict['y_data_keys'][predicted_feat]
         
     if redshifts == 'all':
-        unique_redshifts = training_data_dict['unique_redshifts']
+        unique_redshifts = np.unique(training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']])
     else:
         for redshift in redshifts:
             if redshift not in training_data_dict['redshifts']:
@@ -132,7 +128,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
         unique_redshifts = redshifts
         
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type, original_units=True)    
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)    
         
     n_fig_rows = int(np.ceil(len(unique_redshifts)/n_columns))
     if len(unique_redshifts) <= n_columns:
@@ -149,19 +145,8 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
     global_ymax = -float('Inf')
     
     # set the bin edges for every subplot
-    if binning_feat in training_data_dict['input_features']:
-        binning_feature_key = training_data_dict['input_features'].index(binning_feat)
-        binning_feature_data_tot = training_data_dict['input_{}_dict'.format(data_type)]['main_input'][:, binning_feature_key]
-    elif binning_feat in training_data_dict['output_features']:
-        binning_feature_key = training_data_dict['output_features'].index(binning_feat)
-        if pso:
-            binning_feature_data_tot = training_data_dict['y_{}'.format(data_type)][:, binning_feature_key]
-        else:
-            binning_feature_data_tot = training_data_dict['output_{}_dict'.format(data_type)][binning_feat]
-    else:
-        print('binning feature not an input nor an output feature of the network')
-        return
-        
+    binning_feature_data_tot = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys'][binning_feat]]
     binned_feat_min_value = np.amin(binning_feature_data_tot)
     binned_feat_max_value = np.amax(binning_feature_data_tot)
     bin_edges = np.linspace(binned_feat_min_value, binned_feat_max_value, nBins+1)
@@ -174,12 +159,13 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
     for i_red, redshift in enumerate(unique_redshifts):
     
         # get the indeces of the train/val/test data that have the current redshift
-        relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
-#         relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
-#                                                               training_data_dict['original_data_keys']['Redshift']] == redshift
+        relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
         data_redshift = training_data_dict['y_{}'.format(data_type)][relevant_inds, pred_feat_nr]
         pred_points_redshift = predicted_points[relevant_inds, pred_feat_nr]
         binning_feature_data_redshift = binning_feature_data_tot[relevant_inds]
+
+        
 
         # bin_means contain (0: mean of the binned values, 1: bin edges, 2: numbers pointing each example to a bin)
         bin_means_true = stats.binned_statistic(binning_feature_data_redshift, data_redshift, bins=bin_edges)
@@ -270,7 +256,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, unit_dict, data_keys, pr
     return fig
 
 
-def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False, galaxies=None, redshifts='all', 
+def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, galaxies=None, redshifts='all', 
                                  title=None, n_redshifts_per_row=2, y_min=None, y_max=None, x_min=None, x_max=None, 
                                  data_type='test', predicted_points=None):
 
@@ -279,10 +265,11 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False,
     ### subplot will instead contain the true values for that feature.
 
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type, original_units=True)
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
     if redshifts == 'all':
-        unique_redshifts = training_data_dict['unique_redshifts']
+        unique_redshifts = np.unique(training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']])
     else:
         for redshift in redshifts:
             if redshift not in training_data_dict['redshifts']:
@@ -290,21 +277,12 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False,
                 return
         unique_redshifts = redshifts
         
-    if 'Halo_mass' in training_data_dict['input_features']:
-        halo_mass_index = training_data_dict['input_features'].index('Halo_mass')
-        x_data = training_data_dict['input_{}_dict'.format(data_type)]['main_input'][:, halo_mass_index]
-    else:
-        print('Halo mass not an input feature of the network')
-        return
-    
-    stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
-    if pso:
-        true_y_data = training_data_dict['y_{}'.format(data_type)][:, stellar_mass_index]
-    else:
-        true_y_data = training_data_dict['output_{}_dict'.format(data_type)]['Stellar_mass'][:, stellar_mass_index]
-        
-    predicted_y_data = predicted_points[:, stellar_mass_index]
-    
+    x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Halo_mass']]
+    true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Stellar_mass']]
+    predicted_y_data = predicted_points[:,training_data_dict['y_data_keys']['Stellar_mass']]
+
     x_feat_name = get_print_name('Halo_mass')
     y_feat_name = get_print_name('Stellar_mass')
  
@@ -313,6 +291,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False,
 
      
     n_fig_rows = int(np.ceil(len(unique_redshifts) / n_redshifts_per_row))
+    print(n_fig_rows)
     if n_redshifts_per_row == 2 and len(unique_redshifts) > 1:
         n_fig_columns = 4
     else:
@@ -327,15 +306,17 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False,
     global_ymin = float('Inf')
     global_ymax = -float('Inf')
 
+    print(unique_redshifts)
     for i_red, redshift in enumerate(unique_redshifts):
         
         # get the indeces of the train/val/test data that have the current redshift
-        relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
-
+        relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
         x_data_redshift = x_data[relevant_inds]
         true_y_data_redshift = true_y_data[relevant_inds]
         predicted_y_data_redshift = predicted_y_data[relevant_inds]
         
+        print(n_fig_rows, n_fig_columns, i_red * 2 + 1)
         ax_pred = plt.subplot(n_fig_rows, n_fig_columns, i_red * 2 + 1)
 
         ax_pred.plot(x_data_redshift, predicted_y_data_redshift, 'r.', markersize=2)
@@ -414,7 +395,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, pso=False,
     return fig
 
 
-def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, pso=False, galaxies=None, redshifts='all', 
+def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, galaxies=None, redshifts='all', 
                                  title=None, n_redshifts_per_row=2, y_min=None, y_max=None, x_min=None, x_max=None, 
                                  data_type='test', predicted_points=None):
 
@@ -423,10 +404,11 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, pso=False, 
     ### subplot will instead contain the true values for that feature.
 
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type)
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
     if redshifts == 'all':
-        unique_redshifts = training_data_dict['unique_redshifts']
+        unique_redshifts = np.unique(training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Redshift']])
     else:
         for redshift in redshifts:
             if redshift not in training_data_dict['redshifts']:
@@ -434,18 +416,12 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, pso=False, 
                 return
         unique_redshifts = redshifts
         
-    stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
-    sfr_index = training_data_dict['output_features'].index('SFR')
-    if pso:
-        true_x_data = training_data_dict['y_{}'.format(data_type)][:, stellar_mass_index]
-        true_y_data = training_data_dict['y_{}'.format(data_type)][:, sfr_index]
-    else:
-        true_x_data = training_data_dict['output_{}_dict'.format(data_type)]['Stellar_mass'][:, stellar_mass_index]
-        true_y_data = training_data_dict['output_{}_dict'.format(data_type)]['SFR'][:, sfr_index]
-    
-   
-    predicted_x_data = predicted_points[:, stellar_mass_index]
-    predicted_y_data = predicted_points[:, sfr_index]
+    true_x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['Stellar_mass']]
+    true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys']['SFR']]
+    predicted_x_data = predicted_points[:,training_data_dict['y_data_keys']['Stellar_mass']]
+    predicted_y_data = predicted_points[:,training_data_dict['y_data_keys']['SFR']]
     
     x_feat_name = get_print_name('Stellar_mass')
     y_feat_name = get_print_name('SFR')
@@ -472,8 +448,8 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, unit_dict, pso=False, 
     for i_red, redshift in enumerate(unique_redshifts):
         
         # get the indeces of the train/val/test data that have the current redshift
-        relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
-        
+        relevant_inds = training_data_dict['original_data'][training_data_dict['{}_indices'.format(data_type)], 
+                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
         true_x_data_redshift = true_x_data[relevant_inds]
         true_y_data_redshift = true_y_data[relevant_inds]
         predicted_x_data_redshift = predicted_x_data[relevant_inds]
@@ -563,7 +539,7 @@ def get_scatter_comparison_plots_old(model, training_data_dict, unit_dict, x_axi
     ### subplot will instead contain the true values for that feature.
 
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type)
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
     true_x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
                                                               training_data_dict['original_data_keys'][x_axis_feature]]
@@ -651,9 +627,9 @@ def get_scatter_comparison_plots_old(model, training_data_dict, unit_dict, x_axi
     return fig
 
 
-def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, pso=False, 
-                              galaxies=None, title=None, data_type='test', marker_size=5, y_min=None, y_max=None, x_min=None, 
-                              x_max=None, predicted_points=None):
+def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, galaxies=None, title=None, 
+                              data_type='test', marker_size=5, y_min=None, y_max=None, x_min=None, x_max=None, 
+                              predicted_points=None):
     
     
     if not y_axis_feature in training_data_dict['output_features']:
@@ -661,50 +637,19 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
               (y_axis_feature, ', '.join(training_data_dict['output_features'])))
         return 
         
-    if x_axis_feature in training_data_dict['output_features']:
-        x_label = 'log(DNN$[{}])$'.format(unit_dict[x_axis_feature])
-
-        x_feat_index = training_data_dict['output_features'].index(x_axis_feature)
-        if pso:
-            x_data = training_data_dict['y_{}'.format(data_type)]
-        else:
-            x_data = training_data_dict['output_{}_dict'.format(data_type)][x_axis_feature]
-            
-        # rescale data
-        x_data = convert_units(x_data, training_data_dict['norm']['output'], back_to_original=True, 
-                               conv_values=training_data_dict['conv_values_output'])
-        x_data = x_data[:, x_feat_index]
-            
-    elif x_axis_feature in training_data_dict['input_features']:
-        
-        x_feat_index = training_data_dict['input_features'].index(x_axis_feature)
-        x_data = training_data_dict['input_{}_dict'.format(data_type)]['main_input']
-        x_label = 'log(Emerge$[{}])$'.format(unit_dict[x_axis_feature])
-    
-        # rescale data
-        x_data = convert_units(x_data, training_data_dict['norm']['input'], back_to_original=True, 
-                               conv_values=training_data_dict['conv_values_input'])
-        x_data = x_data[:, x_feat_index]
-        
-        
-           
-    y_feat_index = training_data_dict['output_features'].index(y_axis_feature)
-    
+    x_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys'][x_axis_feature]]
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type, original_units=True)
-        
-    pred_y_data = predicted_points[:, y_feat_index]
-        
-    if pso:
-        true_y_data = training_data_dict['y_{}'.format(data_type)][:, y_feat_index]
-        true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
-                                         back_to_original=True, conv_values=training_data_dict['conv_values_output'])
+        pred_y_data = predict_points(model, training_data_dict, data_type = data_type)[:,training_data_dict['y_data_keys']
+                                                                                   [y_axis_feature]]
     else:
-        true_y_data = training_data_dict['output_{}_dict'.format(data_type)][y_axis_feature][:, y_feat_index]
-        true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
-                                         back_to_original=True, conv_values=training_data_dict['conv_values_output'])
-
-    y_label = 'log($[{}])$'.format(unit_dict[y_axis_feature])
+        pred_y_data = predicted_points[:,training_data_dict['y_data_keys'][y_axis_feature]]
+        
+    
+    true_y_data = training_data_dict['original_data'][training_data_dict[data_type+'_indices'], 
+                                                              training_data_dict['original_data_keys'][y_axis_feature]]
+    x_label = 'True %s %s' % (x_axis_feature, unit_dict[x_axis_feature])
+    y_label = '%s %s' % (y_axis_feature, unit_dict[y_axis_feature])
     
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
@@ -734,7 +679,7 @@ def get_sfr_stellar_mass_contour(model, training_data_dict, unit_dict, galaxies=
                                  y_min=None, y_max=None, x_min=None, x_max=None, predicted_points=None):
     
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type)
+        predicted_points = predict_points(model, training_data_dict, data_type = data_type)
         
         
     sfr_true = training_data_dict['original_data'][:, training_data_dict['original_data_keys']['SFR']]
