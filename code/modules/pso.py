@@ -22,10 +22,11 @@ class Feed_Forward_Neural_Network():
         self.model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, activation_function, 
                                       output_activation, reg_strength)
         
-    def setup_pso(self, pso_param_dict={}):
+    def setup_pso(self, pso_param_dict={}, train_on_obs_data=True):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
-                                   self.output_features, self.activation_function, pso_param_dict, self.reg_strength)
+                                   self.output_features, self.activation_function, pso_param_dict, self.reg_strength, 
+                                   train_on_obs_data)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False):
         
@@ -36,7 +37,7 @@ class Feed_Forward_Neural_Network():
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
     def __init__(self, parent, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, pso_param_dict, reg_strength):
+                 activation_function, pso_param_dict, reg_strength, train_on_obs_data):
         self.pso_param_dict = {
             'nr_particles': 40,
             'xMin': -10,
@@ -63,6 +64,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     break
         
         self.parent = parent
+        self.train_on_obs_data = train_on_obs_data
         self.nr_variables = self.parent.model.count_params()
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -311,6 +313,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
     def evaluate_model(self, mode, weights=None):
             
         y_pred = predict_points(self.parent.model, self.training_data_dict, original_units=False, as_lists=False, mode=mode)
+        
+        if train_on_obs_data
         
         diff = y_pred - self.training_data_dict['y_'+mode]
         squares = np.power(diff, 2) / np.shape(y_pred[0])

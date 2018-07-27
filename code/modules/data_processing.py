@@ -3,6 +3,7 @@ import numpy as np
 from keras import backend as K
 import tensorflow as tf
 import os.path
+from scipy.stats import binned_statistic
 
 
 def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_growth=True):
@@ -137,7 +138,7 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
 
 def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift, outputs_to_weigh, 
                       total_set_size, train_size=0, val_size=0,
-                      test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0, pso=False):
+                      test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0, pso=False, use_emerge_targets=False):
     
     n_data_points = galaxies.shape[0]
     
@@ -157,9 +158,6 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
     x_train = np.zeros((len(train_indices), len(input_features)))
     x_val = np.zeros((len(val_indices), len(input_features)))
     x_test = np.zeros((len(test_indices), len(input_features)))
-    y_train = np.zeros((len(train_indices), len(output_features)))
-    y_val = np.zeros((len(val_indices), len(output_features)))
-    y_test = np.zeros((len(test_indices), len(output_features)))
     
     data_redshifts = {}
     
@@ -168,11 +166,6 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         x_val[:,i] = galaxies[val_indices, data_keys[input_features[i]]]
         x_test[:,i] = galaxies[test_indices, data_keys[input_features[i]]]
 
-    for i in range(len(output_features)):
-        y_train[:,i] = galaxies[train_indices, data_keys[output_features[i]]]
-        y_val[:,i] = galaxies[val_indices, data_keys[output_features[i]]]
-        y_test[:,i] = galaxies[test_indices, data_keys[output_features[i]]]
-        
     data_redshifts['train_data'] = galaxies[train_indices, data_keys['Redshift']]
     data_redshifts['val_data'] = galaxies[val_indices, data_keys['Redshift']]
     data_redshifts['test_data'] = galaxies[test_indices, data_keys['Redshift']]
@@ -183,9 +176,6 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'x_train': x_train,
         'x_val': x_val,
         'x_test': x_test,
-        'y_train': y_train,
-        'y_val': y_val,
-        'y_test': y_test,
         'train_indices': train_indices,
         'val_indices': val_indices,
         'test_indices': test_indices,
@@ -193,74 +183,57 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'data_redshifts': data_redshifts
     }
     
-    train_weights, val_weights, test_weights = get_weights(training_data_dict, output_features, outputs_to_weigh, 
-                                                           weigh_by_redshift, pso=pso)
-    training_data_dict['train_weights'] = train_weights
-    training_data_dict['val_weights'] = val_weights
-    training_data_dict['test_weights'] = test_weights
-    
-    return training_data_dict
-
-
-def divide_train_data_old(galaxies, data_keys, input_features, output_features, redshifts, total_set_size, train_size=0, val_size=0,
-                      test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0):
-    
-    n_data_points = galaxies.shape[0]
-    
-    if k_fold_cv:
-        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
-        fold_size = int(total_set_size / tot_cv_folds)
-        val_indices = subset_indices[cv_fold_nr*fold_size : (cv_fold_nr+1)*fold_size]
-        train_indices = np.concatenate((subset_indices[:cv_fold_nr*fold_size], subset_indices[(cv_fold_nr+1)*fold_size:]))
-        test_indices = [0]
+    if use_emerge_targets:
+        
+        y_train = np.zeros((len(train_indices), len(output_features)))
+        y_val = np.zeros((len(val_indices), len(output_features)))
+        y_test = np.zeros((len(test_indices), len(output_features)))
+        
+        for i in range(len(output_features)):
+            y_train[:,i] = galaxies[train_indices, data_keys[output_features[i]]]
+            y_val[:,i] = galaxies[val_indices, data_keys[output_features[i]]]
+            y_test[:,i] = galaxies[test_indices, data_keys[output_features[i]]]
+            
+        training_data_dict['y_train'] = y_train
+        training_data_dict['y_val'] = y_val
+        training_data_dict['y_test'] = y_test
+        
+        train_weights, val_weights, test_weights = get_weights(training_data_dict, output_features, outputs_to_weigh, 
+                                                               weigh_by_redshift, pso=pso)
+        training_data_dict['train_weights'] = train_weights
+        training_data_dict['val_weights'] = val_weights
+        training_data_dict['test_weights'] = test_weights
         
     else:
-        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
-        train_indices = subset_indices[: int(train_size)]
-        val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
-        test_indices = subset_indices[int(train_size+val_size) :]
-
-    x_train = np.zeros((len(train_indices), len(input_features)))
-    x_val = np.zeros((len(val_indices), len(input_features)))
-    x_test = np.zeros((len(test_indices), len(input_features)))
-    y_train = np.zeros((len(train_indices), len(output_features)))
-    y_val = np.zeros((len(val_indices), len(output_features)))
-    y_test = np.zeros((len(test_indices), len(output_features)))
-    x_data_keys = {}
-    y_data_keys = {}
-    
-    for i in range(len(input_features)):
-        x_train[:,i] = galaxies[train_indices, data_keys[input_features[i]]]
-        x_val[:,i] = galaxies[val_indices, data_keys[input_features[i]]]
-        x_test[:,i] = galaxies[test_indices, data_keys[input_features[i]]]
-
-        x_data_keys[input_features[i]] = i
-
-    for i in range(len(output_features)):
-        y_train[:,i] = galaxies[train_indices, data_keys[output_features[i]]]
-        y_val[:,i] = galaxies[val_indices, data_keys[output_features[i]]]
-        y_test[:,i] = galaxies[test_indices, data_keys[output_features[i]]]
         
-        y_data_keys[output_features[i]] = i
-
-    training_data_dict = {
-        'output_features': output_features,
-        'input_features': input_features,
-        'x_train': x_train,
-        'x_val': x_val,
-        'x_test': x_test,
-        'y_train': y_train,
-        'y_val': y_val,
-        'y_test': y_test,
-        'x_data_keys': x_data_keys,
-        'y_data_keys': y_data_keys,
-        'train_indices': train_indices,
-        'val_indices': val_indices,
-        'test_indices': test_indices,
-        'original_data': galaxies,
-        'original_data_keys': data_keys,
-        'redshifts': redshifts
-    }
+        destination_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
+        
+        # store the SSFR data for quicker comparison later
+        ssfr_data = {}
+        for redshift in training_data_dict['unique_redshifts']:
+            
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(destination_directory + file_name + '.json', 'r') as f:
+                ssfr = json.load(f)
+            
+            bin_width, lower_bin_edge, upper_bin_edge = ssfr.pop(0)
+            
+            mean_ssfr = [item[1] for item in ssfr]
+            errors = [item[2] for item in ssfr]
+            
+            redshift_data = {
+                'bin_width': bin_width,
+                'lower_bin_edge': lower_bin_edge,
+                'upper_bin_edge': upper_bin_edge,
+                'mean_ssfr': mean_ssfr,
+                'errors': errors
+            }
+                
+            ssfr_data['{:.1f}'.format(redshift)] = redshift_data
+            
+        training_data_dict['ssfr_data'] = ssfr_data
+    
+    
     
     return training_data_dict
 
@@ -351,38 +324,16 @@ def normalise_data(training_data_dict, norm, pso=False):
     x_train = training_data_dict['x_train']
     x_val = training_data_dict['x_val']
     x_test = training_data_dict['x_test']
-    y_train = training_data_dict['y_train']
-    y_val = training_data_dict['y_val']
-    y_test = training_data_dict['y_test']
-    
+
     input_train_dict = {}
     input_val_dict = {}
     input_test_dict = {}
     
-    output_train_dict = {}
-    output_val_dict = {}
-    output_test_dict = {}
-    
-#     print(np.shape(x_train))
-#     print(np.shape(x_val))
-#     print(np.shape(x_test))
     # convert units based on the train data only
     x_train_norm, conv_values_input = convert_units(x_train, norm['input'])  
-#     print('x train: ', x_train_norm)
-#     print('x train mean: ', np.mean(x_train_norm))
     x_val_norm = convert_units(x_val, norm['input'], conv_values=conv_values_input)
-#     print('x val: ', x_val_norm)
-#     print('x val mean: ', np.mean(x_val_norm))
     x_test_norm = convert_units(x_test, norm['input'], conv_values=conv_values_input)
-#     print('x test: ', x_test_norm)
-#     print('x test mean: ', np.mean(x_test_norm))
-#     print('x train type: ', type(x_train_norm))
-#     print('x val type: ', type(x_val_norm))
-#     print('x test type: ', type(x_test_norm))
     
-    
-
-
     input_train_dict['main_input'] = x_train_norm
     input_val_dict['main_input'] = x_val_norm
     input_test_dict['main_input'] = x_test_norm
@@ -396,168 +347,49 @@ def normalise_data(training_data_dict, norm, pso=False):
     del training_data_dict["x_train"]
     del training_data_dict["x_val"]
     del training_data_dict["x_test"]
-    
-    
-    # convert units based on the train data only
-    y_train_norm, conv_values_output = convert_units(y_train, norm['output'])  
-    y_val_norm = convert_units(y_val, norm['output'], conv_values=conv_values_output)
-    y_test_norm = convert_units(y_test, norm['output'], conv_values=conv_values_output)
-#     print('y train mean: ', np.mean(y_train_norm))
-#     print('y val mean: ', np.mean(y_val_norm))
-#     print('y test mean: ', np.mean(y_test_norm))
 
     training_data_dict['conv_values_output'] = conv_values_output
     
-    if pso:
+    if 'y_train' in training_data_dict:
         
-        training_data_dict['y_train'] = y_train_norm
-        training_data_dict['y_val'] = y_val_norm
-        training_data_dict['y_test'] = y_test_norm
-        
-    if not pso:       # if trained with backpropagation
-        
-        for i_feat, feat in enumerate(training_data_dict['output_features']):
-            output_train_dict[feat] = y_train_norm[:, i_feat]
-            output_val_dict[feat] = y_val_norm[:, i_feat]
-            output_test_dict[feat] = y_test_norm[:, i_feat]
+        y_train = training_data_dict['y_train']
+        y_val = training_data_dict['y_val']
+        y_test = training_data_dict['y_test']
 
-      #  todo: have to keep the real halo weights and the true output in training data dict....
+        output_train_dict = {}
+        output_val_dict = {}
+        output_test_dict = {}
+
+        # convert units based on the train data only
+        y_train_norm, conv_values_output = convert_units(y_train, norm['output'])  
+        y_val_norm = convert_units(y_val, norm['output'], conv_values=conv_values_output)
+        y_test_norm = convert_units(y_test, norm['output'], conv_values=conv_values_output)
     
-        del training_data_dict["y_train"]
-        del training_data_dict["y_val"]
-        del training_data_dict["y_test"]
+        if pso:
 
-        training_data_dict['output_train_dict'] = output_train_dict
-        training_data_dict['output_val_dict'] = output_val_dict
-        training_data_dict['output_test_dict'] = output_test_dict
-        
-        training_data_dict['norm'] = norm
-        
-    return training_data_dict
+            training_data_dict['y_train'] = y_train_norm
+            training_data_dict['y_val'] = y_val_norm
+            training_data_dict['y_test'] = y_test_norm
 
+        if not pso:       # if trained with backpropagation
 
-def normalise_data_old(training_data_dict, norm):
-    
+            for i_feat, feat in enumerate(training_data_dict['output_features']):
+                output_train_dict[feat] = y_train_norm[:, i_feat]
+                output_val_dict[feat] = y_val_norm[:, i_feat]
+                output_test_dict[feat] = y_test_norm[:, i_feat]
+
+          #  todo: have to keep the real halo weights and the true output in training data dict....
+
+            del training_data_dict["y_train"]
+            del training_data_dict["y_val"]
+            del training_data_dict["y_test"]
+
+            training_data_dict['output_train_dict'] = output_train_dict
+            training_data_dict['output_val_dict'] = output_val_dict
+            training_data_dict['output_test_dict'] = output_test_dict
+
     training_data_dict['norm'] = norm
-    
-    x_train = training_data_dict['x_train']
-    x_val = training_data_dict['x_val']
-    x_test = training_data_dict['x_test']
-    y_train = training_data_dict['y_train']
-    y_val = training_data_dict['y_val']
-    y_test = training_data_dict['y_test']
-    
-    input_train_dict = {}
-    input_val_dict = {}
-    input_test_dict = {}
-    
-    output_train_dict = {}
-    output_val_dict = {}
-    output_test_dict = {}
-    
-    if norm['input'] == 'none':
         
-        input_train_dict['main_input'] = x_train
-        input_val_dict['main_input'] = x_val
-        input_test_dict['main_input'] = x_test
-        
-    elif norm['input'] == 'zero_mean_unit_std':
-
-        x_data_means = np.mean(x_train, 0)
-        x_data_stds = np.std(x_train, 0)
-
-        x_train_norm = (x_train - x_data_means) / x_data_stds
-        x_val_norm = (x_val - x_data_means) / x_data_stds
-        x_test_norm = (x_test - x_data_means) / x_data_stds
-        
-        input_train_dict['main_input'] = x_train_norm
-        input_val_dict['main_input'] = x_val_norm
-        input_test_dict['main_input'] = x_test_norm
-        
-        training_data_dict['x_data_means'] = x_data_means
-        training_data_dict['x_data_stds'] = x_data_stds
-        
-    elif norm['input'] == 'zero_to_one':
-
-        x_data_max = np.max(x_train, 0)
-        x_data_min = np.min(x_train, 0)
-
-        x_train_norm = (x_train - x_data_min) / (x_data_max - x_data_min)
-        x_val_norm = (x_val - x_data_min) / (x_data_max - x_data_min)
-        x_test_norm = (x_test - x_data_min) / (x_data_max - x_data_min)
-        
-        input_train_dict['main_input'] = x_train_norm
-        input_val_dict['main_input'] = x_val_norm
-        input_test_dict['main_input'] = x_test_norm
-        
-        training_data_dict['x_data_max'] = x_data_max
-        training_data_dict['x_data_min'] = x_data_min
-        
-    else:
-        print('Incorrect norm provided: ', norm)  
-    
-    # what is this?
-#     if 'Redshift' in training_data_dict['input_features']:
-#         input_train_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_train[:, 
-#                                                             training_data_dict['x_data_keys']['Redshift']] / 100
-#         input_val_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_val[:, 
-#                                                             training_data_dict['x_data_keys']['Redshift']] / 100
-#         input_test_dict['main_input'][:, training_data_dict['x_data_keys']['Redshift']] = x_test[:, 
-#                                                            training_data_dict['x_data_keys']['Redshift']] / 100
-        
-    if norm['output'] == 'none':
-        
-        for i_feat, feat in enumerate(training_data_dict['output_features']):
-            output_train_dict[feat] = y_train[:, i_feat]
-            output_val_dict[feat] = y_val[:, i_feat]
-            output_test_dict[feat] = y_test[:, i_feat]
-    
-    elif norm['output'] == 'zero_mean_unit_std':
-            
-        y_data_means = np.mean(y_train, 0)
-        y_data_stds = np.std(y_train, 0)
-
-        y_train_norm = (y_train - y_data_means) / y_data_stds
-        y_val_norm = (y_val - y_data_means) / y_data_stds
-        y_test_norm = (y_test - y_data_means) / y_data_stds
-            
-        for i_feat, feat in enumerate(training_data_dict['output_features']):
-            output_train_dict[feat] = y_train_norm[:, i_feat]
-            output_val_dict[feat] = y_val_norm[:, i_feat]
-            output_test_dict[feat] = y_test_norm[:, i_feat]
-                        
-        training_data_dict['y_data_means'] = y_data_means
-        training_data_dict['y_data_stds'] = y_data_stds
-        
-
-    elif norm['output'] == 'zero_to_one':
-        
-        y_data_max = np.max(y_train, 0)
-        y_data_min = np.min(y_train, 0)
-
-        y_train_norm = (y_train - y_data_min) / (y_data_max - y_data_min)
-        y_val_norm = (y_val - y_data_min) / (y_data_max - y_data_min)
-        y_test_norm = (y_test - y_data_min) / (y_data_max - y_data_min)
-        
-        for i_feat, feat in enumerate(training_data_dict['output_features']):
-            output_train_dict[feat] = y_train_norm[:, i_feat]
-            output_val_dict[feat] = y_val_norm[:, i_feat]
-            output_test_dict[feat] = y_test_norm[:, i_feat]
-            
-        training_data_dict['y_data_max'] = y_data_max
-        training_data_dict['y_data_min'] = y_data_min
-       
-    else:
-        print('Incorrect norm provided: ', norm)    
-        
-    training_data_dict['input_train_dict'] = input_train_dict
-    training_data_dict['input_val_dict'] = input_val_dict
-    training_data_dict['input_test_dict'] = input_test_dict
-    training_data_dict['output_train_dict'] = output_train_dict
-    training_data_dict['output_val_dict'] = output_val_dict
-    training_data_dict['output_test_dict'] = output_test_dict
-    
-    
     return training_data_dict
 
 
@@ -841,6 +673,62 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
     return [train_weights, val_weights, test_weights]
 
 
+def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train'):
+    
+    if real_obs:
+        pass
+    
+    else:
+
+        if type(predicted_points) is dict:
+            
+            y_pred = predict_points_local(model, training_data_dict, original_units=True, as_lists=False, mode=mode)
+
+            # mean SSFR
+            if 'SFR' and 'Stellar_mass' in training_data_dict['output_features']:
+                
+                sfr_index = training_data_dict['output_features'].index('SFR')
+                stellar_mass_index = training_data_dict['output_features'].index('SFR')
+                
+                predicted_sfr_log = y_pred[:, sfr_index]
+                predicted_sfr = np.power(10, predicted_sfr_log)
+                predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
+                predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+                
+                ssfr = predicted_sfr / predicted_stellar_mass
+                ssfr_log = np.log10(ssfr)
+                
+                loss = 0
+                
+                for redshift in training_data_dict['unique_redshifts']:
+                    
+                    relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
+                    
+                    bin_width = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_width']
+                    lower_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['lower_bin_edge']
+                    upper_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['upper_bin_edge']
+                    
+                    mean_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
+                    errors = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
+                    
+                    bin_edges = np.arange(lower_bin_edge, upper_bin_edge + bin_width, bin_width)
+                    n_bins = len(bin_edges)-1
+                    bin_stats_means = binned_statistic(stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                                       bins=bin_edges, statistic='mean')
+                    bin_stats_stds = binned_statistic(stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                                      bins=bin_edges, statistic=np.std)
+                    mean_pred_ssfr = bin_stats_means[0]
+                    pred_std_ssfr_log = bin_stats_stds[0]
+                    
+                    loss += np.sum(np.power(mean_ssfr - mean_pred_ssfr, 2) / errors) / np.shape[errors][0]
+                    
+            # SMF
+#             if 'Stellar_mass' in training_data_dict['output_features']:
+                
+
+        else:
+
+            pass
 
 
 
@@ -852,3 +740,25 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
 
 
 
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
