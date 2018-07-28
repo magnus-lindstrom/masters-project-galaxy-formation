@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units
+from data_processing import predict_points, convert_units, loss_func_obs_stats
 from scipy import stats
 import corner
 
@@ -804,7 +804,32 @@ def get_sfr_stellar_mass_contour(model, training_data_dict, unit_dict, galaxies=
     plt.show()
     
     return [fig1, fig2]
+
+
+def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test'):
     
+    pred_ssfr, true_ssfr, bin_centers, redshifts = loss_func_obs_stats(model, training_data_dict, 
+                                                                       real_obs=False, mode=data_type, get_functions=True)
+    
+    x_label = 'log(DNN$[{}])$'.format(unit_dict['Stellar_mass'])
+    y_label = 'log(DNN$[{}])$'.format(unit_dict['SFR'])
+    
+    fig = plt.figure(figsize=(12,8))
+    ax = plt.subplot(111)
+
+    plt.plot(bin_centers[0], pred_ssfr[0], 'b-')
+    plt.plot(bin_centers[0], true_ssfr[0], 'r-')
+    plt.xlabel(x_label, fontsize=15)
+    plt.ylabel(y_label, fontsize=15)
+    
+    plt.legend(['DNN', 'Emerge'], loc='upper left', fontsize='xx-large')
+    
+    ax.text(.73, .1, 'z = {:2.1f}'.format(redshifts[0]), fontsize=20, transform = ax.transAxes,
+                    horizontalalignment='center')    
+    if title is not None:
+        plt.title(title, fontsize=20)
+        
+    return fig
     
 def get_print_name(feature_name):
     

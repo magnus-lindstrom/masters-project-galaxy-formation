@@ -4,7 +4,7 @@ import datetime
 from keras.models import Sequential
 from keras.layers import Dense
 from model_setup import *
-from data_processing import get_weights, predict_points
+from data_processing import get_weights, predict_points, loss_func_obs_stats
 from sklearn.metrics import mean_squared_error
 
 class Feed_Forward_Neural_Network():
@@ -22,11 +22,11 @@ class Feed_Forward_Neural_Network():
         self.model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, activation_function, 
                                       output_activation, reg_strength)
         
-    def setup_pso(self, pso_param_dict={}, train_on_obs_data=True):
+    def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
                                    self.output_features, self.activation_function, pso_param_dict, self.reg_strength, 
-                                   train_on_obs_data)
+                                   reinf_learning, real_observations)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False):
         
@@ -37,7 +37,7 @@ class Feed_Forward_Neural_Network():
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
     def __init__(self, parent, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, pso_param_dict, reg_strength, train_on_obs_data):
+                 activation_function, pso_param_dict, reg_strength, reinf_learning, real_observations):
         self.pso_param_dict = {
             'nr_particles': 40,
             'xMin': -10,
@@ -64,7 +64,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     break
         
         self.parent = parent
-        self.train_on_obs_data = train_on_obs_data
+        self.reinf_learning = reinf_learning
+        self.train_on_real_obs = real_observations
         self.nr_variables = self.parent.model.count_params()
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -314,25 +315,31 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
         y_pred = predict_points(self.parent.model, self.training_data_dict, original_units=False, as_lists=False, mode=mode)
         
-        if train_on_obs_data
-        
-        diff = y_pred - self.training_data_dict['y_'+mode]
-        squares = np.power(diff, 2) / np.shape(y_pred[0])
-        weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
-        
-        score = np.sum(weighted_squares)
-        
-#         score = mean_squared_error(self.training_data_dict['y_'+mode], y_pred, self.training_data_dict[mode+'_weights'])
-   
-#         print('score diff: {:.2e}'.format(score2 - score))
+        if self.reinf_learning:
+            
+            score = loss_func_obs_stats(self.parent.model, self.training_data_dict, real_obs=self.train_on_real_obs, mode=mode)
+            
+        else:
 
-        if weights is None:
-            weights = np.array([])
-            weight_mat_list = self.parent.model.get_weights()
-            for weight_mat in weight_mat_list:
-                weights = np.concatenate((weights, np.ndarray.flatten(weight_mat)))
-                
-        score = score + np.sum(np.power(weights, 2) * self.reg_strength)
+            diff = y_pred - self.training_data_dict['y_'+mode]
+            squares = np.power(diff, 2) / np.shape(y_pred[0])
+            weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
+
+            score = np.sum(weighted_squares)
+
+    #         score = mean_squared_error(self.training_data_dict['y_'+mode], y_pred, self.training_data_dict[mode+'_weights'])
+
+    #         print('score diff: {:.2e}'.format(score2 - score))
+
+            if weights is None:
+                weights = np.array([])
+                weight_mat_list = self.parent.model.get_weights()
+                for weight_mat in weight_mat_list:
+                    weights = np.concatenate((weights, np.ndarray.flatten(weight_mat)))
+
+            score = score + np.sum(np.power(weights, 2) * self.reg_strength)
+            
+#         print(score)
             
         return score
     
@@ -414,7 +421,7 @@ class PSO_Particle(PSO_Swarm):
         self.parent.parent.model.set_weights(weight_mat_list)
         
         score = self.parent.evaluate_model(mode, weights=self.position)
-        
+                
         if mode == 'train' and score < self.best_score:
             self.best_score = score
             self.best_position = self.position

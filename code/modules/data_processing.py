@@ -3,6 +3,7 @@ import numpy as np
 from keras import backend as K
 import tensorflow as tf
 import os.path
+import json
 from scipy.stats import binned_statistic
 
 
@@ -216,15 +217,21 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
             with open(destination_directory + file_name + '.json', 'r') as f:
                 ssfr = json.load(f)
             
-            bin_width, lower_bin_edge, upper_bin_edge = ssfr.pop(0)
+            parameter_dict = ssfr.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            min_bin_edge = parameter_dict['min_bin_edge']
+            max_bin_edge = parameter_dict['max_bin_edge']
+#             print(bin_widths, min_bin_edge, max_bin_edge)
             
             mean_ssfr = [item[1] for item in ssfr]
             errors = [item[2] for item in ssfr]
+#             print('mean ssfr for redshift {:.1f}: ,'.format(redshift) ,mean_ssfr)
+#             print('errors for redshift {:.1f}: ,'.format(redshift) ,errors)
             
             redshift_data = {
-                'bin_width': bin_width,
-                'lower_bin_edge': lower_bin_edge,
-                'upper_bin_edge': upper_bin_edge,
+                'bin_widths': bin_widths,
+                'min_bin_edge': min_bin_edge,
+                'max_bin_edge': max_bin_edge,
                 'mean_ssfr': mean_ssfr,
                 'errors': errors
             }
@@ -347,8 +354,6 @@ def normalise_data(training_data_dict, norm, pso=False):
     del training_data_dict["x_train"]
     del training_data_dict["x_val"]
     del training_data_dict["x_test"]
-
-    training_data_dict['conv_values_output'] = conv_values_output
     
     if 'y_train' in training_data_dict:
         
@@ -364,6 +369,8 @@ def normalise_data(training_data_dict, norm, pso=False):
         y_train_norm, conv_values_output = convert_units(y_train, norm['output'])  
         y_val_norm = convert_units(y_val, norm['output'], conv_values=conv_values_output)
         y_test_norm = convert_units(y_test, norm['output'], conv_values=conv_values_output)
+        
+        training_data_dict['conv_values_output'] = conv_values_output
     
         if pso:
 
@@ -673,63 +680,139 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
     return [train_weights, val_weights, test_weights]
 
 
-def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train'):
+def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', get_functions=False):
     
     if real_obs:
         pass
     
     else:
 
-        if type(predicted_points) is dict:
+        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
+
+        # mean SSFR
+        if 'SFR' and 'Stellar_mass' in training_data_dict['output_features']:
+
+            sfr_index = training_data_dict['output_features'].index('SFR')
+            stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+
+            predicted_sfr_log = y_pred[:, sfr_index]
+            predicted_sfr_log[predicted_sfr_log < -300] = -300
+            predicted_sfr_log[predicted_sfr_log > 300] = 300
+#             if np.isinf(predicted_sfr_log).any():
+#                 print('Infinite values predicted for logged sfr')
+#                 print(predicted_sfr_log)
+#             if np.isnan(predicted_sfr_log).any():
+#                 print('Nan values predicted for logged sfr')
+#                 print(predicted_sfr_log)
+                
+            predicted_sfr = np.power(10, predicted_sfr_log)
+#             if np.isinf(predicted_sfr).any():
+#                 print('Infinite values predicted for sfr')
+#                 print(predicted_sfr)
+#             if np.isnan(predicted_sfr).any():
+#                 print('Nan values predicted for sfr')
+#                 print(predicted_sfr)
+#             predicted_sfr[np.isinf(predicted_sfr)] = 500
+                
+            predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
+            predicted_stellar_mass_log[predicted_stellar_mass_log < -300] = -300
+            predicted_stellar_mass_log[predicted_stellar_mass_log > 300] = 300
+#             if np.isinf(predicted_stellar_mass_log).any():
+#                 print('Infinite values predicted for log stellar mass')
+#                 print(predicted_stellar_mass_log)
+#             if np.isnan(predicted_stellar_mass_log).any():
+#                 print('Nan values predicted for log stellar mass')
+#                 print(predicted_stellar_mass_log)
+                
+            predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+#             if np.isinf(predicted_stellar_mass).any():
+#                 print('Infinite values predicted for stellar mass')
+#                 print(predicted_stellar_mass)
+#             if np.isnan(predicted_stellar_mass).any():
+#                 print('Nan values predicted for stellar mass')
+#                 print(predicted_stellar_mass)
+#             predicted_stellar_mass[np.isinf(predicted_stellar_mass)] = 10**20
             
-            y_pred = predict_points_local(model, training_data_dict, original_units=True, as_lists=False, mode=mode)
+#             print('predicted_sfr: ', predicted_sfr)
+#             print('predicted_stellar_mass: ', predicted_stellar_mass)
 
-            # mean SSFR
-            if 'SFR' and 'Stellar_mass' in training_data_dict['output_features']:
-                
-                sfr_index = training_data_dict['output_features'].index('SFR')
-                stellar_mass_index = training_data_dict['output_features'].index('SFR')
-                
-                predicted_sfr_log = y_pred[:, sfr_index]
-                predicted_sfr = np.power(10, predicted_sfr_log)
-                predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
-                predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
-                
-                ssfr = predicted_sfr / predicted_stellar_mass
-                ssfr_log = np.log10(ssfr)
-                
-                loss = 0
-                
-                for redshift in training_data_dict['unique_redshifts']:
-                    
-                    relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
-                    
-                    bin_width = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_width']
-                    lower_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['lower_bin_edge']
-                    upper_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['upper_bin_edge']
-                    
-                    mean_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
-                    errors = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
-                    
-                    bin_edges = np.arange(lower_bin_edge, upper_bin_edge + bin_width, bin_width)
-                    n_bins = len(bin_edges)-1
-                    bin_stats_means = binned_statistic(stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
-                                                       bins=bin_edges, statistic='mean')
-                    bin_stats_stds = binned_statistic(stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
-                                                      bins=bin_edges, statistic=np.std)
-                    mean_pred_ssfr = bin_stats_means[0]
-                    pred_std_ssfr_log = bin_stats_stds[0]
-                    
-                    loss += np.sum(np.power(mean_ssfr - mean_pred_ssfr, 2) / errors) / np.shape[errors][0]
-                    
-            # SMF
-#             if 'Stellar_mass' in training_data_dict['output_features']:
+            ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+    
+            ssfr[ssfr < -1e300] = -1e300
+            ssfr[ssfr > 1e300] = 1e300
+#             if np.isinf(ssfr).any():
+#                 print('Infinite values predicted for ssfr')
+#                 print(ssfr)
+#             if np.isnan(ssfr).any():
+#                 print('Nan values predicted for ssfr')
+#                 print(ssfr)
+#             ssfr[ssfr>10**20] = 10**20
+            
+#             ssfr[ssfr<10**(-20)] = 10**(-20)
+            
+#             print('ssfr: ', ssfr)
+            
+            ssfr_log = np.log10(ssfr)
+#             if np.isinf(ssfr_log).any():
+#                 print('Infinite values predicted for ssfr_log')
+#                 print(ssfr_log)
+#                 print('ssfr: (ssfr log var inf) ', ssfr)
+#             if np.isnan(ssfr_log).any():
+#                 print('Nan values predicted for ssfr_log')
+#                 print(ssfr_log)
                 
 
-        else:
+#             print('ssfr log: ', ssfr_log)
+            score = 0
+            if get_functions:
+                pred_ssfr = []
+                true_ssfr = []
+                redshifts = []
+                bin_centers = []
 
-            pass
+            for redshift in training_data_dict['unique_redshifts']:
 
+                relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
+
+                bin_widths = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
+                min_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['min_bin_edge']
+                max_bin_edge = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['max_bin_edge']
+                
+                mean_ssfr = np.array(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr'])
+                errors = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
+
+                bin_edges = np.arange(min_bin_edge, max_bin_edge + bin_widths, bin_widths)
+                n_bins = len(bin_edges)-1
+                bin_stats_means = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                                   bins=bin_edges, statistic='mean')
+                bin_stats_stds = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                                  bins=bin_edges, statistic=np.std)
+#                 print('bin_stats_means: ', bin_stats_means)
+                mean_pred_ssfr = bin_stats_means[0]
+                pred_std_ssfr_log = bin_stats_stds[0]
+#                 print('mean pred ssfr: ',mean_pred_ssfr)
+#                 print(type(mean_pred_ssfr))
+#                 print(type(mean_ssfr))
+
+                if get_functions:
+                    pred_ssfr.append(mean_pred_ssfr.copy())
+                    true_ssfr.append(mean_ssfr.copy())
+                    redshifts.append(redshift)
+                    bin_centers.append([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_edges)-1)])
+            
+                
+                # change every NaN into a large number
+                nan_indeces = np.isnan(mean_pred_ssfr)
+                if nan_indeces.any():
+                    mean_pred_ssfr[nan_indeces] = mean_ssfr[nan_indeces] * 1000
+#                     print('{:d} nan indeces found in ssfr'.format(np.sum(nan_indeces)))
+
+                score += np.sum(np.power(mean_ssfr - mean_pred_ssfr, 2) / errors) / np.shape(errors)[0]
+
+            if get_functions:
+                return [pred_ssfr, true_ssfr, bin_centers, redshifts]
+            else:
+                return score
 
 
 
