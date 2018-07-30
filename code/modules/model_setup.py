@@ -1,10 +1,13 @@
-from keras import regularizers
-from keras.optimizers import Adam
-from keras.models import Sequential, Model, load_model
-from keras.layers import Input, Dense, LeakyReLU, concatenate
+import numpy as np
+
 
 def standard_network(input_features, output_features, neurons_per_layer, nr_layers, act_fun, output_activation, 
                      reg_strength, clipvalue=0.5, alpha=0.01, loss='mse'):
+    
+    from keras import regularizers
+    from keras.optimizers import Adam
+    from keras.models import Sequential, Model, load_model
+    from keras.layers import Input, Dense, LeakyReLU, concatenate
     
     main_input = Input(shape=(len(input_features),), name = 'main_input')
 
@@ -45,9 +48,34 @@ def standard_network(input_features, output_features, neurons_per_layer, nr_laye
     return model
 
 
+def standard_network_get_nr_variables_weight_shapes(input_features, output_features, neurons_per_layer, nr_layers):
+    
+    weight_shapes = []
+    
+    weight_shapes.append((len(input_features), neurons_per_layer))
+    weight_shapes.append((neurons_per_layer, ))
+    
+    for i_lay in range(nr_layers - 1):
+        weight_shapes.append((neurons_per_layer, neurons_per_layer))
+        weight_shapes.append((neurons_per_layer, ))
+        
+    for i_output in range(len(output_features)):
+        weight_shapes.append((neurons_per_layer, 1))
+        weight_shapes.append((1, ))
+        
+    nr_parameters = (nr_layers-1)*neurons_per_layer**2 + (len(input_features)+len(output_features)+nr_layers)*neurons_per_layer \
+                     + len(output_features)
+    
+    return [nr_parameters, weight_shapes]
+
 
 def split_network(input_features, output_features, neurons_per_layer, nr_layers, act_fun, output_activation, reg_strength,
                   alpha=0.1, optimiser='adam', loss='mse'):
+    
+    from keras import regularizers
+    from keras.optimizers import Adam
+    from keras.models import Sequential, Model, load_model
+    from keras.layers import Input, Dense, LeakyReLU, concatenate
     
     if output_features.sort() is not ['SFR', 'Stellar_mass']:
         print('This network is intended to have two outputs: SFR and Stellar mass')

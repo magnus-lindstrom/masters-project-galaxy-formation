@@ -2,10 +2,12 @@ import numpy as np
 import time
 import datetime
 import multiprocessing as mp
-from keras.models import Sequential
-from keras.layers import Dense
+import queue
+import pickle
+# from keras.models import Sequential
+# from keras.layers import Dense
 from model_setup import *
-from data_processing import get_weights, predict_points
+from data_processing import get_weights, predict_points, loss_func_obs_stats
 from sklearn.metrics import mean_squared_error
 
 class Feed_Forward_Neural_Network():
@@ -21,11 +23,11 @@ class Feed_Forward_Neural_Network():
         self.output_activation = output_activation
         self.reg_strength = reg_strength
                 
-    def setup_pso(self, pso_param_dict={}):
+    def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True, nr_processes=30):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
-                                   self.output_features, self.activation_function, self.output_activation, 
-                                   self.reg_strength, pso_param_dict)
+                                   self.output_features, self.activation_function, self.output_activation,
+                                   pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False):
         
@@ -36,7 +38,8 @@ class Feed_Forward_Neural_Network():
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
     def __init__(self, parent, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, output_activation, reg_strength, pso_param_dict):
+                 activation_function, output_activation, pso_param_dict, reg_strength, reinf_learning, real_observations,
+                 nr_processes):
         self.pso_param_dict = {
             'nr_particles': 40,
             'xMin': -10,
@@ -63,26 +66,20 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     break
                     
         self.parent = parent
-        self.nr_processes = self.pso_param_dict['nr_particles']
+        self.reinf_learning = reinf_learning
+        self.train_on_real_obs = real_observations
+        self.nr_processes = nr_processes
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
         self.activation_function = activation_function
         self.input_features = input_features
         self.output_features = output_features
-        
-        self.weight_shapes = []
-        
-        self.model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, 
-                                      activation_function, output_activation, reg_strength)
+                
+        self.nr_variables, self.weight_shapes = standard_network_get_nr_variables_weight_shapes(input_features, output_features, 
+                                                                                                nr_neurons_per_lay, nr_hidden_layers)
         
         self.network_args = [input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, 
-                                      activation_function, output_activation, reg_strength]
-        
-        self.nr_variables = self.model.count_params()
-        weights = self.model.get_weights()
-
-        for mat in weights:
-            self.weight_shapes.append(np.shape(mat))
+                             activation_function, output_activation, reg_strength]
         
         self.best_weights_train = None
         self.best_weights_val = None
@@ -99,14 +96,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.verbatim = verbatim
         
         with open('progress.txt', 'w+') as f:
-
             
-            inp_queue = mp.Queue()
-            results_queue = mp.Queue()
+            self.inp_queue = mp.Queue()
+            self.results_queue = mp.Queue()
             
             process_list = []
             for i in range(self.nr_processes):
-                process = mp.Process(target=particle_evaluator, args=(inp_queue, results_queue, training_data_dict, 
+                process = mp.Process(target=particle_evaluator, args=(self.inp_queue, self.results_queue, training_data_dict, 
+                                                                      self.reinf_learning, self.train_on_real_obs, 
                                                                       self.network_args, self.weight_shapes))
                 process_list.append(process)
                 
@@ -125,11 +122,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.progress = 0
                 
+                self.swarm_best_score_train = 1e20
+                self.swarm_best_score_val = 1e20
+                
                 self.validation_score_history = []
                 self.training_score_history = []
-                
-                self.swarm_best_train = 1e20
-                self.swarm_best_val = 1e20
                 
                 self.avg_speed_before_history = []
                 self.avg_speed_after_history = []
@@ -141,7 +138,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                 glob_start = time.time()
                 for iteration in range(nr_iterations):
-
+                    
                     self.time_since_train_improvement += 1
                     self.time_since_val_improvement += 1
                     self.progress = iteration / nr_iterations
@@ -151,21 +148,23 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         break
 
                     for i_particle in range(self.pso_param_dict['nr_particles']):
-                        inp_queue.put([self.positions[i_particle], i_particle])
-                        print('input queued ', i_particle)
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 'train'])
 
                     particle_scores = np.zeros(self.pso_param_dict['nr_particles'])
                     for i_particle in range(self.pso_param_dict['nr_particles']):
                         
-                        
-                        score, particle_nr = results_queue.get()
+                        try:
+                            score, particle_nr = self.results_queue.get(timeout=100)
+                            
+                        except queue.Empty:
+                            print('timeout error')
+                            process_list[i_particle].terminate()
+                            
                         particle_scores[particle_nr] = score
-                        print('results received', i_particle)
                     
-                    print('checkpoint')
                     # results contain the train scores. if one of them exceeds the max: update the max score, best swarm 
                     # position and check the val score of the best pos
-                    update_loss_stats(results, f, iteration)
+                    self.update_loss_stats(particle_scores, f, iteration)
 
 
                     # update the positions of the particles, the function should receive the swarm best, the particle best 
@@ -173,7 +172,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                     # 
 
-                    self.update_best_weights(particle, train_score, f, iteration, i_particle)
+#                     self.update_best_weights(particle, train_score, f, iteration, i_particle)
 
                     self.update_swarm(speed_check, f)
 
@@ -189,42 +188,82 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('{}, Training complete. {}'.format(datetime.datetime.now().strftime("%H:%M:%S"), end_train_message))
             f.flush()
             
-    def update_loss_stats(self, results):
+    def update_loss_stats(self, results, f, iteration):
     
-        for i_result, result in enumerate(results):
+        for i_particle, result in enumerate(results):
             
-            is_particle_best = result > self.particle_train_best_scores[i_result]
+            is_particle_best = result < self.particle_train_best_scores[i_particle]
             
             if is_particle_best:
-                self.particle_train_best_scores[i_result] = result
+                self.particle_train_best_scores[i_particle] = result
+                self.particle_train_best_pos[i_particle] = self.positions[i_particle]
                 
+            is_swarm_best_train = result < self.swarm_best_score_train
             
+            if is_swarm_best_train:
+                
+                self.swarm_best_score_train = result
+                self.training_score_history.append(result)
+                self.swarm_best_pos_train = self.positions[i_particle]
+                
+                self.time_since_train_improvement = 0
+                
+                # see if the result is also the highest val result so far
+                self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
+                val_score, stds = self.results_queue.get(timeout=100)
+                self.best_val_stds = stds
+                
+                is_swarm_best_val = val_score < self.swarm_best_score_val
+                
+                if is_swarm_best_val:
+                    
+                    self.swarm_best_pos_val = self.positions[i_particle]
+                    self.validation_score_history.append(val_score)
+                    self.swarm_best_score_val = val_score
+                    
+                    self.time_since_val_improvement = 0
+                    
+                    # save the model
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save'])
+                    out = self.results_queue.get(timeout=20)
+                    
+                    if out != 'save_successful':
+                        print('out: ', out)
+                        print('model could not be saved')
+                    
+                if self.verbatim:
+                    print('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
+                          datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
+                f.write('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}\n'.format(
+                      datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
+                f.flush()
+                    
             
-    def update_best_weights(self, results, f, iteration):
+#     def update_best_weights(self, results, f, iteration):
         
-        self.best_weights_train = particle.get_weights()
+#         self.best_weights_train = particle.get_weights()
                         
-        self.time_since_train_improvement = 0
-        self.swarm_best_train = train_score
-        self.swarm_best_position = particle.position
+#         self.time_since_train_improvement = 0
+#         self.swarm_best_train = train_score
+#         self.swarm_best_position = particle.position
 
-        val_score = particle.evaluate_particle('val')
-        is_swarm_best_val = (val_score < self.swarm_best_val)
-        if is_swarm_best_val: # only update best weights after val highscore
+#         val_score = particle.evaluate_particle('val')
+#         is_swarm_best_val = (val_score < self.swarm_best_val)
+#         if is_swarm_best_val: # only update best weights after val highscore
             
-            self.best_weights_val = particle.get_weights()
-            self.swarm_best_val = val_score
-            self.time_since_val_improvement = 0
+#             self.best_weights_val = particle.get_weights()
+#             self.swarm_best_val = val_score
+#             self.time_since_val_improvement = 0
 
-        self.validation_score_history.append(val_score)
-        self.training_score_history.append(train_score)
+#         self.validation_score_history.append(val_score)
+#         self.training_score_history.append(train_score)
         
-        if self.verbatim:
-            print('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
-                  datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, train_score, val_score))
-        f.write('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}\n'.format(
-              datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, train_score, val_score))
-        f.flush()
+#         if self.verbatim:
+#             print('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
+#                   datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, train_score, val_score))
+#         f.write('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}\n'.format(
+#               datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, train_score, val_score))
+#         f.flush()
     
     
     def check_progress(self, f, glob_start, iteration):
@@ -247,19 +286,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         if (int(iteration/self.pso_param_dict['restart_check_interval']) == iteration/self.pso_param_dict['restart_check_interval']) \
             and (iteration > 0):
             
-            # see if network has run into a local minima   
-            self.set_best_weights('val')
-            y_pred = predict_points(self.parent.model, self.training_data_dict, original_units=False, mode='val')
-
-            stds = np.std(y_pred, axis=0)
 #             print('\nStandard deviations of predicted parameters (validation set): ', stds)
-            should_start_fresh = np.any(stds < self.pso_param_dict['min_std_tol'])
+            should_start_fresh = np.any(self.best_val_stds < self.pso_param_dict['min_std_tol'])
             if should_start_fresh:
                 if self.verbatim:
                     print('Restarting training because of too low predicted feature variance in validation set ({:.2e}).\n'.format(
-                          np.min(stds)))
+                          np.min(self.best_val_stds)))
                 f.write('Restarting training because of too low predicted feature variance in validation set ({:.2e}).\n'.format(
-                      np.min(stds)))
+                      np.min(self.best_val_stds)))
                 return [should_start_fresh, training_is_done, end_train_message]
 
             progress_end = time.time()
@@ -290,27 +324,27 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.flush()
         return inertia_weight
         
-    def predict_output_old(self, mode):
+#     def predict_output_old(self, mode):
         
-        if self.training_data_dict['norm'] == 'none':
-            y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode])
-        else:
-            y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode+'_norm'])
+#         if self.training_data_dict['norm'] == 'none':
+#             y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode])
+#         else:
+#             y_pred = self.parent.model.predict(self.training_data_dict['x_'+mode+'_norm'])
 
-        return y_pred
+#         return y_pred
         
     def update_swarm(self, speed_check, f):
         
-        self.speeds_before = []
-        self.speeds_after = []
+#         self.speeds_before = []
+#         self.speeds_after = []
         
-        for particle in self.particle_list:
-            particle.update_particle()
+        for i_particle in range(self.pso_param_dict['nr_particles']):
+            self.update_particle(i_particle)
         
-        avg_speed_before = np.mean(self.speeds_before)
-        avg_speed_after = np.mean(self.speeds_after)
-        self.avg_speed_before_history.append(avg_speed_before)
-        self.avg_speed_after_history.append(avg_speed_after)
+#         avg_speed_before = np.mean(self.speeds_before)
+#         avg_speed_after = np.mean(self.speeds_after)
+#         self.avg_speed_before_history.append(avg_speed_before)
+#         self.avg_speed_after_history.append(avg_speed_after)
         
         if speed_check:
             print('Average speed of the particles before normalization is: ', avg_speed_before)
@@ -319,23 +353,37 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('Average speed of the particles after normalization is: %.2f' % (avg_speed_after))
             f.flush()
             
-    def set_best_weights(self, mode):
-        if mode == 'train':
-            self.parent.model.set_weights(self.best_weights_train)
-        elif mode == 'val':
-            self.parent.model.set_weights(self.best_weights_val)
+#     def set_best_weights(self, mode):
+#         if mode == 'train':
+#             self.parent.model.set_weights(self.best_weights_train)
+#         elif mode == 'val':
+#             self.parent.model.set_weights(self.best_weights_val)
         
     def evaluate_model(self, model, training_data_dict, mode):
             
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
         
-   #     diff = y_pred - self.training_data_dict['y_'+mode]
-   #     squares = np.power(diff, 2) / np.shape(y_pred[0])
-   #     weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
-   #     score = np.sum(self.training_data_dict[mode+'_weights'])
-        
-        score = mean_squared_error(self.training_data_dict['y_'+mode], y_pred, self.training_data_dict[mode+'_weights'])
-   #     print('score diff: {:.2e}'.format(score2 - score))
+        if self.reinf_learning:
+            
+            score = loss_func_obs_stats(self.parent.model, self.training_data_dict, real_obs=self.train_on_real_obs, mode=mode)
+            
+        else:
+            
+       #     diff = y_pred - self.training_data_dict['y_'+mode]
+       #     squares = np.power(diff, 2) / np.shape(y_pred[0])
+       #     weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
+       #     score = np.sum(self.training_data_dict[mode+'_weights'])
+
+            score = mean_squared_error(self.training_data_dict['y_'+mode], y_pred, self.training_data_dict[mode+'_weights'])
+       #     print('score diff: {:.2e}'.format(score2 - score))
+    
+            if weights is None:
+                weights = np.array([])
+                weight_mat_list = model.get_weights()
+                for weight_mat in weight_mat_list:
+                    weights = np.concatenate((weights, np.ndarray.flatten(weight_mat)))
+
+            score = score + np.sum(np.power(weights, 2) * self.reg_strength)
             
         return score
     
@@ -363,6 +411,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             self.velocities.append(velocity)
             self.particle_train_best_scores.append(starting_score)
             self.particle_train_best_pos.append(position)
+            
+        self.swarm_best_pos_train = self.positions[0]
+        self.swarm_best_pos_val = self.positions[0]
         
     def evaluate_particle(self, model, position, training_data_dict, mode):
         
@@ -388,36 +439,50 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         return weight_mat_list
         
 
-    def update_particle(self):
+    def update_particle(self, i_particle):
 
         q = np.random.uniform()
         r = np.random.uniform()
         
-        particle_best_difference = self.best_position - self.position
-        swarm_best_difference = self.parent.swarm_best_position - self.position
+        particle_best_difference = self.particle_train_best_pos[i_particle] - self.positions[i_particle]
+        swarm_best_difference = self.swarm_best_pos_train - self.positions[i_particle]
 
-        self.velocity = self.parent.inertia_weight * self.velocity + self.parent.pso_param_dict['c1'] * q * \
-                        particle_best_difference / self.parent.pso_param_dict['deltaT'] + \
-                        self.parent.pso_param_dict['c2'] * r * swarm_best_difference / \
-                        self.parent.pso_param_dict['deltaT']
+        self.velocities[i_particle] = self.inertia_weight * self.velocities[i_particle] + self.pso_param_dict['c1'] * q * \
+                                      particle_best_difference / self.pso_param_dict['deltaT'] + \
+                                      self.pso_param_dict['c2'] * r * swarm_best_difference / \
+                                      self.pso_param_dict['deltaT']
         
         # now limit velocity to vMax
-        absolute_velocity_before_normalization = np.sqrt(np.sum(np.power(self.velocity, 2)))
-        is_too_fast = absolute_velocity_before_normalization > self.parent.vMax
+        absolute_velocity_before_normalization = np.sqrt(np.sum(np.power(self.velocities[i_particle], 2)))
+        is_too_fast = absolute_velocity_before_normalization > self.vMax
         if is_too_fast:
             #self.parent.too_fast_count += 1
-            self.velocity = self.velocity * self.parent.vMax / absolute_velocity_before_normalization
+            self.velocities[i_particle] = self.velocities[i_particle] * self.vMax / absolute_velocity_before_normalization
             
-        absolute_velocity_after_normalization = np.sqrt(np.sum(np.power(self.velocity, 2)))
+        absolute_velocity_after_normalization = np.sqrt(np.sum(np.power(self.velocities[i_particle], 2)))
 
-        self.parent.speeds_before.append(absolute_velocity_before_normalization)
-        self.parent.speeds_after.append(absolute_velocity_after_normalization)
+#         self.parent.speeds_before.append(absolute_velocity_before_normalization)
+#         self.parent.speeds_after.append(absolute_velocity_after_normalization)
             
-        self.position = self.position + self.velocity * self.parent.pso_param_dict['deltaT']
+        self.positions[i_particle] = self.positions[i_particle] + self.velocities[i_particle] * self.pso_param_dict['deltaT']
         
-def particle_evaluator(inp_queue, results_queue, training_data_dict, network_args, weight_shapes):
+    def get_best_weights(self, mode):
+        
+        if mode == 'train':
+            weights = self.get_weights(self.swarm_best_pos_train)
+        elif mode == 'val':
+            weights = self.get_weights(self.swarm_best_pos_val)
+            
+        return weights
+        
+def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learning, train_on_real_obs, network_args, 
+                       weight_shapes):
     
-    print(mp.current_process().name,' online')
+#     import tensorflow as tf
+#     sess = tf.Session()
+#     from keras import backend as K
+#     K.set_session(sess)
+
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args
     model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, 
@@ -425,8 +490,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, network_arg
     
     keep_evaluating = True
     while keep_evaluating:
-        position, particle_nr = inp_queue.get()
-        print(mp.current_process().name,' received a job. Particle nr: ', particle_nr)
+        position, particle_nr, mode = inp_queue.get()
         
         if position is None:
             keep_evaluating = False
@@ -434,18 +498,29 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, network_arg
         else:
 
             weight_mat_list = get_weights(position, weight_shapes)
-            print('after get weights')
-            print(model.set_weights)
             model.set_weights(weight_mat_list)
-            print('after set weights')
 
-            score = evaluate_model(model, training_data_dict, mode='train')
-#             time.sleep(60)
-#             score = 5
-        
-            print(mp.current_process().name,' finished evaluating')
+            
 
-            results_queue.put([score, particle_nr])
+            if mode == 'train':
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
+                results_queue.put([score, particle_nr])
+            elif mode == 'val':
+                
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
+                y_pred = predict_points(model, training_data_dict, original_units=False, mode=mode)
+
+                stds = np.std(y_pred, axis=0)
+                
+                results_queue.put([score, stds])
+                
+            elif mode == 'save':
+                
+                model.save('trained_networks/best_model.h5')
+                pickle.dump( training_data_dict, open( "trained_networks/best_model_training_data_dict.p", "wb" ) )
+#                 np.save('trained_networks/best_model_training_data_dict.npy', training_data_dict)
+                
+                results_queue.put('save_successful')
 
 def get_weights(position, weight_shapes): # get the weight list corresponding to the position in parameter space
 
@@ -459,21 +534,24 @@ def get_weights(position, weight_shapes): # get the weight list corresponding to
         weight_mat_list.append(mat)
         weight_counter += nr_weights
         
-
     return weight_mat_list
 
-def evaluate_model(model, training_data_dict, mode):
+def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode):
+    
+    if reinf_learning:
+            
+        score = loss_func_obs_stats(model, training_data_dict, real_obs=train_on_real_obs, mode=mode)
+            
+    else:
 
-    print('before predicting, ',mp.current_process().name)
-    y_pred = predict_points_local(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
-    print('after predicting, ', mp.current_process().name)
-#     diff = y_pred - self.training_data_dict['y_'+mode]
-#     squares = np.power(diff, 2) / np.shape(y_pred[0])
-#     weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
-#     score = np.sum(self.training_data_dict[mode+'_weights'])
+        y_pred = predict_points_local(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
+    #     diff = y_pred - self.training_data_dict['y_'+mode]
+    #     squares = np.power(diff, 2) / np.shape(y_pred[0])
+    #     weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
+    #     score = np.sum(self.training_data_dict[mode+'_weights'])
 
-    score = mean_squared_error(training_data_dict['y_'+mode], y_pred, training_data_dict[mode+'_weights'])
-#     print('score diff: {:.2e}'.format(score2 - score))
+        score = mean_squared_error(training_data_dict['y_'+mode], y_pred, training_data_dict[mode+'_weights'])
+    #     print('score diff: {:.2e}'.format(score2 - score))
 
     return score
 

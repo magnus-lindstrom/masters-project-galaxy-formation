@@ -1,9 +1,8 @@
 import pandas as pd
 import numpy as np
-from keras import backend as K
-import tensorflow as tf
 import os.path
 import json
+import sys
 from scipy.stats import binned_statistic
 
 
@@ -71,7 +70,7 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_gr
 
         unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
                  'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 
+                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
                  'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
                  'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
@@ -106,7 +105,7 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
             
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
                  'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 
+                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
                  'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
                  'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
@@ -180,6 +179,7 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'train_indices': train_indices,
         'val_indices': val_indices,
         'test_indices': test_indices,
+        'original_nr_data_points': n_data_points,
         'unique_redshifts': redshifts,
         'data_redshifts': data_redshifts
     }
@@ -206,15 +206,14 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         training_data_dict['test_weights'] = test_weights
         
     else:
-        
-        destination_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
-        
-        # store the SSFR data for quicker comparison later
+                
+        # store the relevant SSFR data
+        ssfr_directory = '/home/magnus/data/mock_data/ssfr/'
         ssfr_data = {}
         for redshift in training_data_dict['unique_redshifts']:
             
             file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(destination_directory + file_name + '.json', 'r') as f:
+            with open(ssfr_directory + file_name + '.json', 'r') as f:
                 ssfr = json.load(f)
             
             parameter_dict = ssfr.pop(0)
@@ -239,8 +238,36 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
             ssfr_data['{:.1f}'.format(redshift)] = redshift_data
             
         training_data_dict['ssfr_data'] = ssfr_data
-    
-    
+        
+        # store the relevant SMF data
+        smf_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
+        smf_data = {}
+        
+        for redshift in training_data_dict['unique_redshifts']:
+            
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(smf_directory + file_name + '.json', 'r') as f:
+                smf_list = json.load(f)
+                
+            parameter_dict = smf_list.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            min_bin_edge = parameter_dict['min_bin_edge']
+            max_bin_edge = parameter_dict['max_bin_edge']
+            
+            smf = [item[1] for item in smf_list]
+            errors = [item[2] for item in smf_list]
+            
+            redshift_data = {
+                'bin_widths': bin_widths,
+                'min_bin_edge': min_bin_edge,
+                'max_bin_edge': max_bin_edge,
+                'smf': smf,
+                'errors': errors
+            }
+            
+            smf_data['{:.1f}'.format(redshift)] = redshift_data
+            
+        training_data_dict['smf_data'] = smf_data
     
     return training_data_dict
 
@@ -419,6 +446,7 @@ def get_test_score(model, training_data_dict, norm):
 def predict_points(model, training_data_dict, original_units=True, as_lists=False, mode='test'):
 
     predicted_norm_points = model.predict(training_data_dict['input_{}_dict'.format(mode)])
+    
     if type(predicted_norm_points) is list:
         predicted_norm_points = np.asarray(predicted_norm_points)
         predicted_norm_points = np.squeeze(predicted_norm_points, axis = -1)
@@ -682,13 +710,16 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
 
 def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', get_functions=False):
     
+    np.seterr(over='raise', divide='raise')
+    
     if real_obs:
         pass
     
     else:
-
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
-
+        
+        score = 0
+        
         # mean SSFR
         if 'SFR' and 'Stellar_mass' in training_data_dict['output_features']:
 
@@ -696,79 +727,35 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
             stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
 
             predicted_sfr_log = y_pred[:, sfr_index]
-            predicted_sfr_log[predicted_sfr_log < -300] = -300
-            predicted_sfr_log[predicted_sfr_log > 300] = 300
-#             if np.isinf(predicted_sfr_log).any():
-#                 print('Infinite values predicted for logged sfr')
-#                 print(predicted_sfr_log)
-#             if np.isnan(predicted_sfr_log).any():
-#                 print('Nan values predicted for logged sfr')
-#                 print(predicted_sfr_log)
-                
+            predicted_sfr_log[predicted_sfr_log < -15] = -15
+            predicted_sfr_log[predicted_sfr_log > 15] = 15
             predicted_sfr = np.power(10, predicted_sfr_log)
-#             if np.isinf(predicted_sfr).any():
-#                 print('Infinite values predicted for sfr')
-#                 print(predicted_sfr)
-#             if np.isnan(predicted_sfr).any():
-#                 print('Nan values predicted for sfr')
-#                 print(predicted_sfr)
-#             predicted_sfr[np.isinf(predicted_sfr)] = 500
                 
             predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
-            predicted_stellar_mass_log[predicted_stellar_mass_log < -300] = -300
-            predicted_stellar_mass_log[predicted_stellar_mass_log > 300] = 300
-#             if np.isinf(predicted_stellar_mass_log).any():
-#                 print('Infinite values predicted for log stellar mass')
-#                 print(predicted_stellar_mass_log)
-#             if np.isnan(predicted_stellar_mass_log).any():
-#                 print('Nan values predicted for log stellar mass')
-#                 print(predicted_stellar_mass_log)
-                
+            predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
+            predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
             predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
-#             if np.isinf(predicted_stellar_mass).any():
-#                 print('Infinite values predicted for stellar mass')
-#                 print(predicted_stellar_mass)
-#             if np.isnan(predicted_stellar_mass).any():
-#                 print('Nan values predicted for stellar mass')
-#                 print(predicted_stellar_mass)
-#             predicted_stellar_mass[np.isinf(predicted_stellar_mass)] = 10**20
-            
-#             print('predicted_sfr: ', predicted_sfr)
-#             print('predicted_stellar_mass: ', predicted_stellar_mass)
 
-            ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
-    
-            ssfr[ssfr < -1e300] = -1e300
-            ssfr[ssfr > 1e300] = 1e300
-#             if np.isinf(ssfr).any():
-#                 print('Infinite values predicted for ssfr')
-#                 print(ssfr)
-#             if np.isnan(ssfr).any():
-#                 print('Nan values predicted for ssfr')
-#                 print(ssfr)
-#             ssfr[ssfr>10**20] = 10**20
-            
-#             ssfr[ssfr<10**(-20)] = 10**(-20)
-            
-#             print('ssfr: ', ssfr)
-            
-            ssfr_log = np.log10(ssfr)
-#             if np.isinf(ssfr_log).any():
-#                 print('Infinite values predicted for ssfr_log')
-#                 print(ssfr_log)
-#                 print('ssfr: (ssfr log var inf) ', ssfr)
-#             if np.isnan(ssfr_log).any():
-#                 print('Nan values predicted for ssfr_log')
-#                 print(ssfr_log)
+            try:
+                ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+            except:
+                print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
+                print('predicted_sfr: ',predicted_sfr)
+                print('predicted_stellar_mass: ', predicted_stellar_mass)
+                sys.exit('overflow error while dividing')
                 
-
-#             print('ssfr log: ', ssfr_log)
-            score = 0
+            try:
+                ssfr_log = np.log10(ssfr)
+            except:
+                print(np.dtype(ssfr[0]))
+                print('ssfr: ',ssfr)
+                sys.exit('divide by zero error while taking log')
+                
             if get_functions:
                 pred_ssfr = []
                 true_ssfr = []
-                redshifts = []
-                bin_centers = []
+                redshifts_ssfr = []
+                bin_centers_ssfr = []
 
             for redshift in training_data_dict['unique_redshifts']:
 
@@ -797,10 +784,9 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                 if get_functions:
                     pred_ssfr.append(mean_pred_ssfr.copy())
                     true_ssfr.append(mean_ssfr.copy())
-                    redshifts.append(redshift)
-                    bin_centers.append([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_edges)-1)])
+                    redshifts_ssfr.append(redshift)
+                    bin_centers_ssfr.append([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_edges)-1)])
             
-                
                 # change every NaN into a large number
                 nan_indeces = np.isnan(mean_pred_ssfr)
                 if nan_indeces.any():
@@ -808,17 +794,68 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
 #                     print('{:d} nan indeces found in ssfr'.format(np.sum(nan_indeces)))
 
                 score += np.sum(np.power(mean_ssfr - mean_pred_ssfr, 2) / errors) / np.shape(errors)[0]
-
+            
+        # SMF
+        if 'Stellar_mass' in training_data_dict['output_features']:
+            
+            stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+            
             if get_functions:
-                return [pred_ssfr, true_ssfr, bin_centers, redshifts]
-            else:
-                return score
+                pred_smf_list = []
+                true_smf = []
+                redshifts_smf = []
+                bin_centers_smf = []
+            
+            for redshift in training_data_dict['unique_redshifts']:
+            
+                relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
+                
+                bin_widths = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_widths']
+                min_bin_edge = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['min_bin_edge']
+                max_bin_edge = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['max_bin_edge']
+                
+                smf = np.array(training_data_dict['smf_data']['{:.1f}'.format(redshift)]['smf'])
+                errors = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['errors']
+                
+                bin_edges = np.arange(min_bin_edge, max_bin_edge + bin_widths, bin_widths)
+                n_bins = len(bin_edges)-1
+                
+                predicted_stellar_masses = y_pred[:, stellar_mass_index]
+                
+                bin_stats = binned_statistic(predicted_stellar_masses, predicted_stellar_masses, bins=bin_edges)
+                
+                bin_counts = [np.sum(bin_stats[2] == i) for i in range(1, n_bins+1)]
+                bin_counts = [float('nan') if count == 0 else count for count in bin_counts]
+                
+                bin_counts = np.array(bin_counts, dtype=np.float)
+                pred_smf = bin_counts / 200**3 / bin_widths
+                
+                # since we're only using a subset of the original data points, compensate for this
+                pred_smf = pred_smf * training_data_dict['original_nr_data_points'] \
+                                    / len(training_data_dict['{}_indices'.format(mode)])
+                
+                nan_indeces = np.isnan(pred_smf)
+                pred_smf[np.invert(nan_indeces)] = np.log10(pred_smf[np.invert(nan_indeces)])
+                
+                if get_functions:
+                    pred_smf_list.append(pred_smf.copy())
+                    true_smf.append(smf)
+                    redshifts_smf.append(redshift)
+                    bin_centers_smf.append([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_edges)-1)])
+                
+                if nan_indeces.any():
+                    pred_smf[nan_indeces] = smf[nan_indeces] * 1000
+#                     print('{:d} nan indeces found in smf'.format(np.sum(nan_indeces)))
 
-
-
-
-
-
+                score += np.sum(np.power(smf - pred_smf, 2) / errors) / np.shape(errors)[0]
+            
+        if get_functions:
+            return {
+                'ssfr': [pred_ssfr, true_ssfr, bin_centers_ssfr, redshifts_ssfr],
+                'smf': [pred_smf_list, true_smf, bin_centers_smf, redshifts_smf]
+            }
+        else:
+            return score
 
 
 
