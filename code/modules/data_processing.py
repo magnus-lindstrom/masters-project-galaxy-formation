@@ -170,6 +170,11 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
     data_redshifts['val_data'] = galaxies[val_indices, data_keys['Redshift']]
     data_redshifts['test_data'] = galaxies[test_indices, data_keys['Redshift']]
     
+    original_nr_data_points_by_redshift = []
+    
+    for redshift in redshifts:
+        original_nr_data_points_by_redshift.append(np.sum(galaxies[:, data_keys['Redshift']] == redshift))
+    
     training_data_dict = {
         'output_features': output_features,
         'input_features': input_features,
@@ -179,7 +184,7 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'train_indices': train_indices,
         'val_indices': val_indices,
         'test_indices': test_indices,
-        'original_nr_data_points': n_data_points,
+        'original_nr_data_points_by_redshift': original_nr_data_points_by_redshift,
         'unique_redshifts': redshifts,
         'data_redshifts': data_redshifts
     }
@@ -806,7 +811,7 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                 redshifts_smf = []
                 bin_centers_smf = []
             
-            for redshift in training_data_dict['unique_redshifts']:
+            for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
             
                 relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
                 
@@ -831,7 +836,7 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                 pred_smf = bin_counts / 200**3 / bin_widths
                 
                 # since we're only using a subset of the original data points, compensate for this
-                pred_smf = pred_smf * training_data_dict['original_nr_data_points'] \
+                pred_smf = pred_smf * training_data_dict['original_nr_data_points_by_redshift'][i_red] \
                                     / len(training_data_dict['{}_indices'.format(mode)])
                 
                 nan_indeces = np.isnan(pred_smf)

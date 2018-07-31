@@ -13,7 +13,7 @@ from sklearn.metrics import mean_squared_error
 class Feed_Forward_Neural_Network():
     
     def __init__(self, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, output_activation, reg_strength):
+                 activation_function, output_activation, reg_strength, network_name):
         
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -22,6 +22,7 @@ class Feed_Forward_Neural_Network():
         self.activation_function = activation_function
         self.output_activation = output_activation
         self.reg_strength = reg_strength
+        self.name = network_name
                 
     def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True, nr_processes=30):
         
@@ -224,7 +225,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     self.time_since_val_improvement = 0
                     
                     # save the model
-                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save'])
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
                     out = self.results_queue.get(timeout=20)
                     
                     if out != 'save_successful':
@@ -490,7 +491,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
     
     keep_evaluating = True
     while keep_evaluating:
-        position, particle_nr, mode = inp_queue.get()
+        position, particle_nr, string = inp_queue.get()
         
         if position is None:
             keep_evaluating = False
@@ -500,8 +501,14 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
             weight_mat_list = get_weights(position, weight_shapes)
             model.set_weights(weight_mat_list)
 
+            str_list = string.split(' ')
             
-
+            if len(str_list) == 1:
+                mode = str_list[0]
+            elif len(str_list) == 2:
+                mode = str_list[0]
+                name = str_list[1]
+                
             if mode == 'train':
                 score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
                 results_queue.put([score, particle_nr])
@@ -516,8 +523,8 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 
             elif mode == 'save':
                 
-                model.save('trained_networks/best_model.h5')
-                pickle.dump( training_data_dict, open( "trained_networks/best_model_training_data_dict.p", "wb" ) )
+                model.save('trained_networks/{}.h5'.format(name))
+                pickle.dump(training_data_dict, open('trained_networks/{}_training_data_dict.p'.format(name), 'wb'))
 #                 np.save('trained_networks/best_model_training_data_dict.npy', training_data_dict)
                 
                 results_queue.put('save_successful')
