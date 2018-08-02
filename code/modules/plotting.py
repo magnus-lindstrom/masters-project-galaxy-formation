@@ -289,7 +289,12 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, no_true_pl
             
         if 'Halo_mass' in training_data_dict['input_features']:
             halo_mass_index = training_data_dict['input_features'].index('Halo_mass')
-            x_data = training_data_dict['input_{}_dict'.format(data_type)]['main_input'][:, halo_mass_index]
+            x_data_norm = training_data_dict['input_{}_dict'.format(data_type)]['main_input']
+            print('x data shape: ', np.shape(x_data_norm))
+            x_data = convert_units(x_data_norm, training_data_dict['norm']['input'], 
+                                         back_to_original=True, conv_values=training_data_dict['conv_values_input'])
+            x_data = x_data[:, halo_mass_index]
+            
         else:
             print('Halo mass not an input feature of the network')
             return
@@ -318,8 +323,12 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, no_true_pl
 
             # get the indeces of the train/val/test data that have the current redshift
             relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+            
 
             x_data_redshift = x_data[relevant_inds]
+            print('predicted_y_data shape: ', np.shape(predicted_y_data))            
+            print('relevant_inds shape: ', np.shape(relevant_inds))            
+
             predicted_y_data_redshift = predicted_y_data[relevant_inds]
 
             ax_pred = plt.subplot(n_fig_rows, n_fig_columns, i_red + 1)
@@ -1004,7 +1013,7 @@ def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=Non
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
 
-    plt.plot(bin_centers[0], pred_ssfr[0], 'b-')
+    plt.plot(bin_centers[0], pred_ssfr[0], 'b+')
     plt.plot(bin_centers[0], true_ssfr[0], 'r-')
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
@@ -1031,7 +1040,7 @@ def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
 
-    plt.plot(bin_centers[0], pred_smf[0], 'b-')
+    plt.plot(bin_centers[0], pred_smf[0], 'b+')
     plt.plot(bin_centers[0], true_smf[0], 'r-')
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
@@ -1044,6 +1053,34 @@ def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None
         plt.title(title, fontsize=20)
         
     return fig
+
+
+def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test'):
+
+    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True)
+    
+    pred_fq, true_fq, bin_centers, redshifts = function_dict['fq']
+    
+    x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
+    y_label = 'log($[{}])$'.format(unit_dict['SMF'])
+    
+    fig = plt.figure(figsize=(12,8))
+    ax = plt.subplot(111)
+
+    plt.plot(bin_centers[0], pred_fq[0], 'b+')
+    plt.plot(bin_centers[0], true_fq[0], 'r-')
+    plt.xlabel(x_label, fontsize=15)
+    plt.ylabel(y_label, fontsize=15)
+    
+    plt.legend(['DNN', 'Emerge'], loc='upper left', fontsize='xx-large')
+    
+    ax.text(.73, .1, 'z = {:2.1f}'.format(redshifts[0]), fontsize=20, transform = ax.transAxes,
+                    horizontalalignment='center')    
+    if title is not None:
+        plt.title(title, fontsize=20)
+        
+    return fig
+
     
 def get_print_name(feature_name):
     
