@@ -290,7 +290,6 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, no_true_pl
         if 'Halo_mass' in training_data_dict['input_features']:
             halo_mass_index = training_data_dict['input_features'].index('Halo_mass')
             x_data_norm = training_data_dict['input_{}_dict'.format(data_type)]['main_input']
-            print('x data shape: ', np.shape(x_data_norm))
             x_data = convert_units(x_data_norm, training_data_dict['norm']['input'], 
                                          back_to_original=True, conv_values=training_data_dict['conv_values_input'])
             x_data = x_data[:, halo_mass_index]
@@ -325,9 +324,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, unit_dict, no_true_pl
             relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
             
 
-            x_data_redshift = x_data[relevant_inds]
-            print('predicted_y_data shape: ', np.shape(predicted_y_data))            
-            print('relevant_inds shape: ', np.shape(relevant_inds))            
+            x_data_redshift = x_data[relevant_inds]        
 
             predicted_y_data_redshift = predicted_y_data[relevant_inds]
 
@@ -1001,11 +998,13 @@ def get_sfr_stellar_mass_contour(model, training_data_dict, unit_dict, galaxies=
     return [fig1, fig2]
 
 
-def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test'):
+def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                  directory='', name=''):
     
-    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True)
-        
-    pred_ssfr, true_ssfr, bin_centers, redshifts = function_dict['ssfr']
+    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
+                                        full_range=full_range)
+    
+    pred_ssfr, true_ssfr, pred_bin_centers, obs_bin_centers, redshifts = function_dict['ssfr']
     
     x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
     y_label = 'log($[{}])$'.format(unit_dict['SSFR'])
@@ -1013,26 +1012,32 @@ def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=Non
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
 
-    plt.plot(bin_centers[0], pred_ssfr[0], 'b+')
-    plt.plot(bin_centers[0], true_ssfr[0], 'r-')
+    plt.plot(pred_bin_centers[0], pred_ssfr[0], 'r+')
+    plt.plot(obs_bin_centers[0], true_ssfr[0], 'b-')
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
     
     plt.legend(['DNN', 'Emerge'], loc='upper left', fontsize='xx-large')
     
     ax.text(.73, .1, 'z = {:2.1f}'.format(redshifts[0]), fontsize=20, transform = ax.transAxes,
-                    horizontalalignment='center')    
+                    horizontalalignment='center')
     if title is not None:
         plt.title(title, fontsize=20)
         
-    return fig
+    if save:
+        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
+        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+    else:
+        return fig
 
 
-def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test'):
+def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                  directory='', name=''):
 
-    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True)
+    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
+                                        full_range=full_range)
     
-    pred_smf, true_smf, bin_centers, redshifts = function_dict['smf']
+    pred_smf, true_smf, pred_bin_centers, obs_bin_centers, redshifts = function_dict['smf']
     
     x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
     y_label = 'log($[{}])$'.format(unit_dict['SMF'])
@@ -1040,8 +1045,8 @@ def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
 
-    plt.plot(bin_centers[0], pred_smf[0], 'b+')
-    plt.plot(bin_centers[0], true_smf[0], 'r-')
+    plt.plot(pred_bin_centers[0], pred_smf[0], 'r+')
+    plt.plot(obs_bin_centers[0], true_smf[0], 'b-')
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
     
@@ -1052,14 +1057,20 @@ def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None
     if title is not None:
         plt.title(title, fontsize=20)
         
-    return fig
+    if save:
+        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
+        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+    else:
+        return fig
 
 
-def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test'):
+def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                  directory='', name=''):
 
-    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True)
+    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
+                                        full_range=full_range)
     
-    pred_fq, true_fq, bin_centers, redshifts = function_dict['fq']
+    pred_fq, true_fq, pred_bin_centers, obs_bin_centers, redshifts = function_dict['fq']
     
     x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
     y_label = 'log($[{}])$'.format(unit_dict['SMF'])
@@ -1067,8 +1078,8 @@ def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None,
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
 
-    plt.plot(bin_centers[0], pred_fq[0], 'b+')
-    plt.plot(bin_centers[0], true_fq[0], 'r-')
+    plt.plot(pred_bin_centers[0], pred_fq[0], 'r+')
+    plt.plot(obs_bin_centers[0], true_fq[0], 'b-')
     plt.xlabel(x_label, fontsize=15)
     plt.ylabel(y_label, fontsize=15)
     
@@ -1079,7 +1090,11 @@ def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None,
     if title is not None:
         plt.title(title, fontsize=20)
         
-    return fig
+    if save:
+        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
+        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+    else:
+        return fig
 
     
 def get_print_name(feature_name):

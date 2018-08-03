@@ -29,10 +29,11 @@ class Feed_Forward_Neural_Network():
                                    self.output_features, self.activation_function, self.output_activation,
                                    pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
         
-    def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False):
+    def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
+                  save_all_networks=False):
         
         self.pso_swarm.train_network(nr_iterations, training_data_dict,
-                                     std_penalty, speed_check, verbatim)
+                                     std_penalty, speed_check, verbatim, save_all_networks)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -45,12 +46,12 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             'xMin': -10,
             'xMax': 10,
             'alpha': 1,
-            'deltaT': 1,
+            'delta_t': 1,
             'c1': 2,
             'c2': 2,
-            'inertiaWeightStart': 1.4,
-            'inertiaWeightMin': 0.3,
-            'explorationFraction': 0.8,
+            'inertia_weight_start': 1.4,
+            'inertia_weight_min': 0.3,
+            'exploration_iters': 1000,
             'min_std_tol': 0.01,
             'patience': 300,
             'patience_parameter': 'val',
@@ -84,12 +85,12 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.best_weights_train = None
         self.best_weights_val = None
         
-        self.inertia_weight = self.pso_param_dict['inertiaWeightStart']
-        self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['deltaT']
+        self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
-    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim):
+    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, save_all_networks):
         
         self.training_data_dict = training_data_dict
+        self.save_all_networks = save_all_networks
         
         self.nr_iterations_trained = nr_iterations
         self.std_penalty = std_penalty
@@ -114,11 +115,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             while should_start_fresh:
                 should_start_fresh = False
 
-                inertia_weight_reduction = np.exp(np.log(self.pso_param_dict['inertiaWeightMin'] 
-                                                         / self.pso_param_dict['inertiaWeightStart'])
-                                                         / self.pso_param_dict['explorationFraction'] 
+                self.inertia_weight_reduction = np.exp(np.log(self.pso_param_dict['inertia_weight_min'] 
+                                                         / self.pso_param_dict['inertia_weight_start'])
+                                                         / (self.pso_param_dict['exploration_iters'] / nr_iterations)
                                                          / nr_iterations)
-                inertia_weight = self.pso_param_dict['inertiaWeightStart']
+                self.inertia_weight = self.pso_param_dict['inertia_weight_start']
                 
                 self.progress = 0
                 
@@ -160,8 +161,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                     self.update_swarm(speed_check, f)
 
-                    inertia_weight = self.update_inertia_weight(inertia_weight, inertia_weight_reduction, 
-                                                                iteration, f)
+                    self.update_inertia_weight(iteration, f)
                     
             end = time.time()
             if end_train_message is None:
@@ -208,7 +208,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     self.time_since_val_improvement = 0
                     
                     # save the model
-                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
+                    if self.save_all_networks:
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 'save_all {} {:d}'.format(self.parent.name, 
+                                                                                                              iteration)])
+                    else:
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
                     out = self.results_queue.get(timeout=20)
                     
                     if out != 'save_successful':
@@ -265,18 +269,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
         return [should_start_fresh, training_is_done, end_train_message]
         
-    def update_inertia_weight(self, inertia_weight, inertia_weight_reduction, iteration, f):
+    def update_inertia_weight(self, iteration, f):
         
-        isExploring = (inertia_weight > self.pso_param_dict['inertiaWeightMin'])
+        isExploring = (self.inertia_weight > self.pso_param_dict['inertia_weight_min'])
         if isExploring:
-            inertia_weight = inertia_weight * inertia_weight_reduction
-            isExploring = (inertia_weight > self.pso_param_dict['inertiaWeightMin'])
+            self.inertia_weight = self.inertia_weight * self.inertia_weight_reduction
+            isExploring = (self.inertia_weight > self.pso_param_dict['inertia_weight_min'])
             if not isExploring:
                 if self.verbatim:
                     print('SWITCH TO EPLOIT! Iteration %d/%d.' % (iteration, self.nr_iterations_trained))
                 f.write('SWITCH TO EPLOIT! Iteration %d/%d.\n' % (iteration, self.nr_iterations_trained))
                 f.flush()
-        return inertia_weight
         
     def update_swarm(self, speed_check, f):
         
@@ -311,7 +314,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
             position = self.pso_param_dict['xMin'] + r1 * (self.pso_param_dict['xMax'] - 
                                     self.pso_param_dict['xMin'])
-            velocity = self.pso_param_dict['alpha']/self.pso_param_dict['deltaT'] * \
+            velocity = self.pso_param_dict['alpha']/self.pso_param_dict['delta_t'] * \
                             ((self.pso_param_dict['xMin'] - self.pso_param_dict['xMax'])/2 + r2 * 
                              (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']))
 
@@ -334,9 +337,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         swarm_best_difference = self.swarm_best_pos_train - self.positions[i_particle]
 
         self.velocities[i_particle] = self.inertia_weight * self.velocities[i_particle] + self.pso_param_dict['c1'] * q * \
-                                      particle_best_difference / self.pso_param_dict['deltaT'] + \
+                                      particle_best_difference / self.pso_param_dict['delta_t'] + \
                                       self.pso_param_dict['c2'] * r * swarm_best_difference / \
-                                      self.pso_param_dict['deltaT']
+                                      self.pso_param_dict['delta_t']
         
         # now limit velocity to vMax
         absolute_velocity_before_normalization = np.sqrt(np.sum(np.power(self.velocities[i_particle], 2)))
@@ -350,7 +353,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 #         self.parent.speeds_before.append(absolute_velocity_before_normalization)
 #         self.parent.speeds_after.append(absolute_velocity_after_normalization)
             
-        self.positions[i_particle] = self.positions[i_particle] + self.velocities[i_particle] * self.pso_param_dict['deltaT']
+        self.positions[i_particle] = self.positions[i_particle] + self.velocities[i_particle] * self.pso_param_dict['delta_t']
         
         
 def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learning, train_on_real_obs, network_args, 
@@ -380,7 +383,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 model_name = str_list[1]
             elif len(str_list) == 3:
                 model_name = str_list[1]
-                dir_name = str_list[2]
+                iteration = str_list[2]
                 
             if mode == 'train':
                 score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
@@ -396,16 +399,28 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 
             elif mode == 'save':
                 
-#                 directory = 
-#                 os.makedirs(os.path.dirname(filename), exist_ok=True)
-#                 with open(filename, "w") as f:
-#                     f.write("FOOBAR")
-                
                 model.save('trained_networks/{}.h5'.format(model_name))
                 pickle.dump(training_data_dict, open('trained_networks/{}_training_data_dict.p'.format(model_name), 'wb'))
-#                 np.save('trained_networks/best_model_training_data_dict.npy', training_data_dict)
                 
                 results_queue.put('save_successful')
+                
+            elif mode == 'save_all':
+                
+                directory = 'trained_networks/{}/'.format(model_name)
+                
+                if iteration == '0':
+                    os.makedirs(os.path.dirname(directory + 'iter_{}.h5'.format(iteration)), exist_ok=True)
+                    
+                    for the_file in os.listdir(directory):
+                        file_path = os.path.join(directory, the_file)
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+            
+                model.save(directory + 'iter_{}.h5'.format(iteration))
+                pickle.dump(training_data_dict, open(directory + 'training_data_dict.p', 'wb'))
+                
+                results_queue.put('save_successful')
+                
 
 def get_weights(position, weight_shapes): # get the weight list corresponding to the position in parameter space
 
