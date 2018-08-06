@@ -1,7 +1,8 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units, loss_func_obs_stats
+from data_processing import predict_points, convert_units, loss_func_obs_stats, get_unit_dict
 from scipy import stats
 import corner
 
@@ -998,8 +999,10 @@ def get_sfr_stellar_mass_contour(model, training_data_dict, unit_dict, galaxies=
     return [fig1, fig2]
 
 
-def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
-                  directory='', name=''):
+def get_ssfr_plot(model, training_data_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                  file_path=None):
+    
+    unit_dict = get_unit_dict()
     
     function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
                                         full_range=full_range)
@@ -1025,14 +1028,18 @@ def get_ssfr_plot(model, training_data_dict, unit_dict, galaxies=None, title=Non
         plt.title(title, fontsize=20)
         
     if save:
-        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
-        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, bbox_inches = 'tight')
+        plt.close()
+        plt.clf()
     else:
         return fig
 
 
-def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
-                  directory='', name=''):
+def get_smf_plot(model, training_data_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                 file_path=None):
+    
+    unit_dict = get_unit_dict()
 
     function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
                                         full_range=full_range)
@@ -1058,15 +1065,19 @@ def get_smf_plot(model, training_data_dict, unit_dict, galaxies=None, title=None
         plt.title(title, fontsize=20)
         
     if save:
-        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
-        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, bbox_inches = 'tight')
+        plt.close()
+        plt.clf()
     else:
         return fig
 
 
-def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
-                  directory='', name=''):
+def get_fq_plot(model, training_data_dict, galaxies=None, title=None, data_type='test', full_range=False, save=False,
+                file_path=None):
 
+    unit_dict = get_unit_dict()
+    
     function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
                                         full_range=full_range)
     
@@ -1091,11 +1102,69 @@ def get_fq_plot(model, training_data_dict, unit_dict, galaxies=None, title=None,
         plt.title(title, fontsize=20)
         
     if save:
-        os.makedirs(os.path.dirname(directory + name + '.png'), exist_ok=True)
-        fig.savefig(directory + name + '.png', bbox_inches = 'tight')
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, bbox_inches = 'tight')
+        plt.close()
+        plt.clf()
     else:
         return fig
+    
+    
+def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', full_range=False, 
+                         save=False, file_path=None):
+    
+    unit_dict = get_unit_dict()
+    
+    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, mode=data_type, get_functions=True, 
+                                        full_range=full_range)
+    
+    redshift_index = training_data_dict['unique_redshifts'].index(redshift)
+    
+    pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts = function_dict['ssfr']
+    pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts = function_dict['smf']
+    pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts = function_dict['fq']
+    
+    pred_data = [pred_ssfr, pred_smf, pred_fq]
+    true_data = [true_ssfr, true_smf, true_fq]
+    pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq]
+    obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq]
+    
+    x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
+    y_label = 'log($[{}])$'.format(unit_dict['SMF'])
+    
+    fig = plt.figure(figsize=(20,15))
+    for i in range(3):
+        ax = plt.subplot(2,2,i+1)
 
+        plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r+', markersize=15)
+        plt.plot(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], 'b-')
+        plt.xlabel(x_label, fontsize=15)
+        plt.ylabel(y_label, fontsize=15)
+
+        if i == 2:
+            location = 'upper left'
+        else:
+            location = 'upper right'
+            
+        plt.legend(['DNN', 'Emerge'], loc=location, fontsize='xx-large')
+
+    ax = plt.subplot(2,2,4)
+    ax.axis('off')
+    
+    ax.text(.5, .5, 'z = {:2.1f}'.format(redshifts[redshift_index]), fontsize=50, transform = ax.transAxes,
+                        horizontalalignment='center')
+    
+    if title is not None:
+        plt.suptitle(title, y=0.9, fontsize=20)
+        
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, bbox_inches = 'tight')
+        plt.close()
+        plt.clf()
+    else:
+        return fig
+    
     
 def get_print_name(feature_name):
     

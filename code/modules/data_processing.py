@@ -68,19 +68,10 @@ def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_gr
         for col_nr, key in enumerate(gal_header):
             data_keys[key] = col_nr
 
-        unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
-                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
-                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
-                 'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
-                 'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
-                 'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': '',
-                 'Environmental_density': 'log($M_{G}/M_{S}/Mpc^3$)', 'Redshift': 'z'}
-        
         ### Remove data points with halo mass below 10.5
         galaxies = galaxies[galaxies[:,data_keys['Halo_mass']] > 10.5, :]
         
-        return galaxies, data_keys, unit_dict
+        return galaxies, data_keys
     else:
         print('No files with the specified redshifts found.')
         return 
@@ -102,15 +93,6 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
     data_keys = {}
     for col_nr, key in enumerate(gal_header):
         data_keys[key] = col_nr
-            
-    unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
-                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
-                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
-                 'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
-                 'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
-                 'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': '',
-                 'Environmental_density': 'log($M_{G}/M_{S}/Mpc^3$)', 'Redshift': 'z'}
     
     print('shape before modification: ',np.shape(galaxies))
     ### Remove data points with halo mass below 10.5
@@ -133,8 +115,21 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
         data_keys['Redshift'] = 20
         unit_dict['Redshift'] = 'z'
         
-    return galaxies, data_keys, unit_dict
+    return galaxies, data_keys
 
+
+def get_unit_dict():
+    
+    unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
+                 'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
+                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
+                 'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
+                 'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
+                 'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
+                 'Scale_half_mass': 'a', 'Scale_last_MajM': 'a', 'Type': '',
+                 'Environmental_density': 'log($M_{G}/M_{S}/Mpc^3$)', 'Redshift': 'z'}
+    
+    return unit_dict
 
 def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift, outputs_to_weigh, 
                       total_set_size, train_size=0, val_size=0,
@@ -754,8 +749,6 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
         
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
         
-        score = 0
-        
         sfr_index = training_data_dict['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
 
@@ -804,8 +797,12 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
             obs_bin_centers_fq = []
 
         nr_empty_bins_redshift = np.zeros(len(training_data_dict['unique_redshifts']))
+        
+        tot_score = 0
 
         for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
+            
+            redshift_score = 0
 
             ############### mean SSFR ###############
 
@@ -817,6 +814,10 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
             if not get_functions:
                 bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
                 bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
+                
+                nr_points_outside_stellar_mass_range = np.sum(predicted_stellar_mass_log[relevant_inds] < bin_edges_ssfr[0]) \
+                                                       + np.sum(predicted_stellar_mass_log[relevant_inds] > bin_edges_ssfr[-1])
+                tot_nr_points = len(predicted_stellar_mass_log[relevant_inds])
                 
             else:
 
@@ -860,10 +861,10 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     nr_empty_bins = np.sum(np.invert(non_nan_indeces))
 
                 if np.sum(non_nan_indeces) > 0:
-                    score += np.sum(np.power(mean_ssfr[non_nan_indeces] - mean_pred_ssfr[non_nan_indeces], 2) \
+                    redshift_score += np.sum(np.power(mean_ssfr[non_nan_indeces] - mean_pred_ssfr[non_nan_indeces], 2) \
                                     / errors_ssfr[non_nan_indeces]) / np.shape(errors_ssfr[non_nan_indeces])[0]
                 else:
-                    score += 1000
+                    redshift_score += 1000
 
             ############### SMF ###############  
                 
@@ -923,11 +924,11 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
 
 
                 if np.sum(non_nan_indeces) > 0:
-                    score += np.sum(np.power(smf[non_nan_indeces] - pred_smf[non_nan_indeces], 2) \
+                    redshift_score += np.sum(np.power(smf[non_nan_indeces] - pred_smf[non_nan_indeces], 2) \
                                     / errors_smf[non_nan_indeces]) \
                                     / np.shape(errors_smf[non_nan_indeces])[0]
                 else:
-                    score += 1000
+                    redshift_score += 1000
 
             ############### FQ ###############
 
@@ -1006,18 +1007,26 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     nr_empty_bins = np.sum(np.invert(non_nan_indeces))
 
                 if np.sum(non_nan_indeces) > 0:
-                    score += np.sum(np.power(fq_true[non_nan_indeces] - fq_pred[non_nan_indeces], 2) \
+                    redshift_score += np.sum(np.power(fq_true[non_nan_indeces] - fq_pred[non_nan_indeces], 2) \
                                     / errors_fq[non_nan_indeces]) \
                                     / np.shape(errors_fq[non_nan_indeces])[0]
                 else:
-                    score += 1000
+                    redshift_score += 1000
 
             if not get_functions:
                 nr_empty_bins_redshift[i_red] = nr_empty_bins
-
+                frac_outside = nr_points_outside_stellar_mass_range/tot_nr_points
+                theta = 10
+                if frac_outside > .9:
+                    redshift_score += 1000
+                else:
+                    redshift_score *= (1 + np.exp((frac_outside - 0.1) * theta))
+                
+                tot_score += redshift_score
+                
         if not get_functions:
             nr_empty_bins_tot = np.sum(nr_empty_bins_redshift)
-            score = score + nr_empty_bins_tot
+            tot_score = tot_score * 1.1**(nr_empty_bins_tot)
 
         if get_functions:
             return {
@@ -1026,7 +1035,7 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                 'fq': [pred_fq_list, true_fq_list, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq]
             }
         else:
-            return score
+            return tot_score
 
 
 

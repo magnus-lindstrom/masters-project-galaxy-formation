@@ -1,4 +1,7 @@
 import os
+from os.path import expanduser
+home_dir = expanduser("~")
+network_path = home_dir + '/code/pso_code/trained_networks/'
 import numpy as np
 import time
 import datetime
@@ -172,6 +175,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('{}, Training complete. {}'.format(datetime.datetime.now().strftime("%H:%M:%S"), end_train_message))
             f.flush()
             
+            for process in process_list:
+                process.terminate()
+                process.join()
+            
     def update_loss_stats(self, results, f, iteration):
     
         for i_particle, result in enumerate(results):
@@ -192,6 +199,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.time_since_train_improvement = 0
                 
+                if self.save_all_networks:
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 
+                                        'save_all {} {:d} training'.format(self.parent.name, iteration)])
+                else:
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
+                out = self.results_queue.get(timeout=20)
+
+                if out != 'save_successful':
+                    print('out: ', out)
+                    print('model could not be saved')
+                
                 # see if the result is also the highest val result so far
                 self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
                 val_score, stds = self.results_queue.get(timeout=100)
@@ -209,16 +227,16 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
                     # save the model
                     if self.save_all_networks:
-                        self.inp_queue.put([self.positions[i_particle], i_particle, 'save_all {} {:d}'.format(self.parent.name, 
-                                                                                                              iteration)])
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 
+                                            'save_all {} {:d} validation'.format(self.parent.name, iteration)])
                     else:
                         self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
                     out = self.results_queue.get(timeout=20)
-                    
+
                     if out != 'save_successful':
                         print('out: ', out)
                         print('model could not be saved')
-                    
+                                            
                 if self.verbatim:
                     print('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
                           datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
@@ -384,6 +402,10 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
             elif len(str_list) == 3:
                 model_name = str_list[1]
                 iteration = str_list[2]
+            elif len(str_list) == 4:
+                model_name = str_list[1]
+                iteration = str_list[2]
+                mode_of_hs = str_list[3]
                 
             if mode == 'train':
                 score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
@@ -399,14 +421,14 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 
             elif mode == 'save':
                 
-                model.save('trained_networks/{}.h5'.format(model_name))
-                pickle.dump(training_data_dict, open('trained_networks/{}_training_data_dict.p'.format(model_name), 'wb'))
+                model.save(network_path + '{}.h5'.format(model_name))
+                pickle.dump(training_data_dict, open(network_path + '{}_training_data_dict.p'.format(model_name), 'wb'))
                 
                 results_queue.put('save_successful')
                 
             elif mode == 'save_all':
                 
-                directory = 'trained_networks/{}/'.format(model_name)
+                directory = network_path + '{}/{}_best/'.format(model_name, mode_of_hs)
                 
                 if iteration == '0':
                     os.makedirs(os.path.dirname(directory + 'iter_{}.h5'.format(iteration)), exist_ok=True)
@@ -415,9 +437,10 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                         file_path = os.path.join(directory, the_file)
                         if os.path.isfile(file_path):
                             os.unlink(file_path)
+                            
+                    pickle.dump(training_data_dict, open(directory + 'training_data_dict.p', 'wb'))
             
                 model.save(directory + 'iter_{}.h5'.format(iteration))
-                pickle.dump(training_data_dict, open(directory + 'training_data_dict.p', 'wb'))
                 
                 results_queue.put('save_successful')
                 
