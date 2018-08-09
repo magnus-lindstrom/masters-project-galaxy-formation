@@ -26,3 +26,4 @@ data/
 .tmux*
 code/backpropagation_code/hyperparameter_searches/
 *.p
+*.avi

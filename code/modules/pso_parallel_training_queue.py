@@ -11,6 +11,8 @@ import pickle
 from model_setup import *
 from data_processing import get_weights, predict_points, loss_func_obs_stats
 from sklearn.metrics import mean_squared_error
+from distance_metrics import minkowski_distance
+from plotting import get_smf_ssfr_fq_plot
 
 class Feed_Forward_Neural_Network():
     
@@ -103,6 +105,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
             self.inp_queue = mp.Queue()
             self.results_queue = mp.Queue()
+            self.print_dist_queue = mp.Queue()
+            self.draw_figs_queue = mp.Queue()
             
             process_list = []
             for i in range(self.nr_processes):
@@ -111,6 +115,13 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                                                                       self.network_args, self.weight_shapes))
                 process_list.append(process)
                 
+            distance_process = mp.Process(target=save_distances, args=(self.print_dist_queue, self.parent.name))
+            process_list.append(distance_process)
+            
+            draw_figs_process = mp.Process(target=draw_figs, args=(self.draw_figs_queue, self.parent.name, self.weight_shapes, 
+                                                                   self.network_args, training_data_dict))
+            process_list.append(draw_figs_process)
+            
             for process in process_list:
                 process.start()
             
@@ -129,6 +140,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 self.swarm_best_score_train = 1e20
                 self.swarm_best_score_val = 1e20
                 
+                self.swarm_best_distance_moved_p_point_one = []
+                self.swarm_best_distance_moved_p_one = []
+                self.swarm_best_distance_moved_p_two = []
+                self.swarm_best_distance_moved_p_inf = []
+                                                
                 self.validation_score_history = []
                 self.training_score_history = []
                 
@@ -150,6 +166,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     should_start_fresh, training_is_done, end_train_message = self.check_progress(f, glob_start, iteration)
                     if should_start_fresh or training_is_done:
                         break
+                        
+                    if int(iteration/10) == iteration/10:
+                        self.print_dist_queue.put([self.positions, iteration])
 
                     for i_particle in range(self.pso_param_dict['nr_particles']):
                         self.inp_queue.put([self.positions[i_particle], i_particle, 'train'])
@@ -195,8 +214,28 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.swarm_best_score_train = result
                 self.training_score_history.append(result)
-                self.swarm_best_pos_train = self.positions[i_particle]
                 
+                
+                self.swarm_best_distance_moved_p_point_one.append(
+                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=.1)
+                )
+                self.swarm_best_distance_moved_p_one.append(
+                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=1)
+                )
+                self.swarm_best_distance_moved_p_two.append(
+                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=2)
+                )
+                self.swarm_best_distance_moved_p_inf = [np.max(np.absolute(self.positions[i_particle] - self.swarm_best_pos_train))]
+                distance_dict = {
+                    'swarm_best_distance_moved_p_point_one': self.swarm_best_distance_moved_p_point_one,
+                    'swarm_best_distance_moved_p_one': self.swarm_best_distance_moved_p_one,
+                    'swarm_best_distance_moved_p_two': self.swarm_best_distance_moved_p_two,
+                    'swarm_best_distance_moved_p_inf': self.swarm_best_distance_moved_p_inf
+                }
+                os.makedirs(os.path.dirname(network_path + self.parent.name + '/swarm_best_distance_moved.p'), exist_ok=True)
+                pickle.dump(distance_dict, open(network_path + self.parent.name + '/swarm_best_distance_moved.p', 'wb'))
+                
+                self.swarm_best_pos_train = self.positions[i_particle]
                 self.time_since_train_improvement = 0
                 
                 if self.save_all_networks:
@@ -224,6 +263,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     self.swarm_best_score_val = val_score
                     
                     self.time_since_val_improvement = 0
+                    
+                    # draw the progress figures
+                    self.draw_figs_queue.put([self.swarm_best_pos_val, iteration])
                     
                     # save the model
                     if self.save_all_networks:
@@ -396,7 +438,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
 
             str_list = string.split(' ')
             
-            mode = str_list[0]
+            data_type = str_list[0]
             if len(str_list) == 2:
                 model_name = str_list[1]
             elif len(str_list) == 3:
@@ -407,26 +449,26 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 iteration = str_list[2]
                 mode_of_hs = str_list[3]
                 
-            if mode == 'train':
-                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
+            if data_type == 'train':
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type)
                 results_queue.put([score, particle_nr])
-            elif mode == 'val':
+            elif data_type == 'val':
                 
-                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode=mode)
-                y_pred = predict_points(model, training_data_dict, original_units=False, mode=mode)
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type)
+                y_pred = predict_points(model, training_data_dict, original_units=False, data_type=data_type)
 
                 stds = np.std(y_pred, axis=0)
                 
                 results_queue.put([score, stds])
                 
-            elif mode == 'save':
+            elif data_type == 'save':
                 
                 model.save(network_path + '{}.h5'.format(model_name))
                 pickle.dump(training_data_dict, open(network_path + '{}_training_data_dict.p'.format(model_name), 'wb'))
                 
                 results_queue.put('save_successful')
                 
-            elif mode == 'save_all':
+            elif data_type == 'save_all':
                 
                 directory = network_path + '{}/{}_best/'.format(model_name, mode_of_hs)
                 
@@ -459,29 +501,93 @@ def get_weights(position, weight_shapes): # get the weight list corresponding to
         
     return weight_mat_list
 
-def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, mode):
+def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type):
     
     if reinf_learning:
             
-        score = loss_func_obs_stats(model, training_data_dict, real_obs=train_on_real_obs, mode=mode)
+        score = loss_func_obs_stats(model, training_data_dict, real_obs=train_on_real_obs, data_type=data_type)
             
     else:
 
-        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
-    #     diff = y_pred - self.training_data_dict['y_'+mode]
+        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
+    #     diff = y_pred - self.training_data_dict['y_'+data_type]
     #     squares = np.power(diff, 2) / np.shape(y_pred[0])
-    #     weighted_squares = squares * self.training_data_dict[mode+'_weights'] / np.sum(self.training_data_dict[mode+'_weights'])
-    #     score = np.sum(self.training_data_dict[mode+'_weights'])
+    #     weighted_squares = squares * self.training_data_dict[data_type+'_weights'] / 
+#             np.sum(self.training_data_dict[data_type+'_weights'])
+    #     score = np.sum(self.training_data_dict[data_type+'_weights'])
 
-        score = mean_squared_error(training_data_dict['y_'+mode], y_pred, training_data_dict[mode+'_weights'])
+        score = mean_squared_error(training_data_dict['y_'+data_type], y_pred, training_data_dict[data_type+'_weights'])
     #     print('score diff: {:.2e}'.format(score2 - score))
 
     return score
 
+def save_distances(queue, model_name):
+        
+    keep_evaluating = True
+    
+    while keep_evaluating:
+        positions, iteration = queue.get()
+        
+        p_point_one = minkowski_distance(positions, p=.1)
+        p_one = minkowski_distance(positions, p=1)
+        p_two = minkowski_distance(positions, p=2)
 
+        distance_dict = {
+            'p_point_one': p_point_one,
+            'p_one': p_one,
+            'p_two': p_two
+        }
 
+        file_path = network_path + '{}/interparticle_distances/iter_{:d}.p'.format(model_name, iteration)
 
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
+        pickle.dump(distance_dict, open(file_path, 'wb'))
+
+def draw_figs(queue, model_name, weight_shapes, network_args, training_data_dict):
+    
+    input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
+                    activation_function, output_activation, reg_strength = network_args
+    model = standard_network(input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, 
+                             activation_function, output_activation, reg_strength)
+    
+    keep_evaluating = True
+    
+    while keep_evaluating:
+        position, iteration = queue.get()
+        
+        weight_mat_list = get_weights(position, weight_shapes)
+        model.set_weights(weight_mat_list)
+        
+        title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
+        fig_file_path = network_path + '{}/figures_validation_weights/val_data/all_losses/iter_{}.png'.format(model_name, iteration)
+        get_smf_ssfr_fq_plot(model, training_data_dict, title=title, data_type='val', full_range=True, save=True, 
+                             file_path=fig_file_path, running_from_script=True)
+        
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
 
 

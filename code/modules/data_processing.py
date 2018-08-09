@@ -122,7 +122,7 @@ def get_unit_dict():
     
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
                  'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}',
+                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}', 'FQ': 'f_q',
                  'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
                  'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
@@ -131,8 +131,8 @@ def get_unit_dict():
     
     return unit_dict
 
-def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift, outputs_to_weigh, 
-                      total_set_size, train_size=0, val_size=0,
+def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
+                      total_set_size=0, train_size=0, val_size=0,
                       test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0, pso=False, use_emerge_targets=False):
     
     n_data_points = galaxies.shape[0]
@@ -473,9 +473,9 @@ def get_test_score(model, training_data_dict, norm):
     return test_score
 
 
-def predict_points(model, training_data_dict, original_units=True, as_lists=False, mode='test'):
+def predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type='test'):
 
-    predicted_norm_points = model.predict(training_data_dict['input_{}_dict'.format(mode)])
+    predicted_norm_points = model.predict(training_data_dict['input_{}_dict'.format(data_type)])
     
     if type(predicted_norm_points) is list:
         predicted_norm_points = np.asarray(predicted_norm_points)
@@ -738,7 +738,133 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
     return [train_weights, val_weights, test_weights]
 
 
-def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', get_functions=False, full_range=False):
+def mean_ssfr_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, data_type, get_functions, full_range):
+    
+    if get_functions:
+        
+        pred_ssfr = []
+        true_ssfr = []
+        redshifts_ssfr = []
+        pred_bin_centers_ssfr = []
+        obs_bin_centers_ssfr = []
+        
+        acceptable_stellar_mass_intervals = []
+        
+        for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
+            
+            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+            
+            if full_range:
+                bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
+
+                min_stellar_mass = np.amin(predicted_stellar_mass_log)
+                max_stellar_mass = np.amax(predicted_stellar_mass_log)
+                min_bin_edge_ssfr = np.floor(min_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
+                max_bin_edge_ssfr = np.ceil(max_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
+
+                # make sure that the predicted range is wider than the observed range
+                if min_bin_edge_ssfr < training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0]:
+
+                    if max_bin_edge_ssfr > training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                        bin_edges_ssfr = np.arange(min_bin_edge_ssfr, max_bin_edge_ssfr + bin_widths_ssfr, bin_widths_ssfr)
+                    else:
+                        bin_edges_ssfr = np.arange(min_bin_edge_ssfr, training_data_dict['ssfr_data']
+                                                   ['{:.1f}'.format(redshift)]['bin_edges'][-1] + bin_widths_ssfr, 
+                                                   bin_widths_ssfr)
+                else:
+
+                    if max_bin_edge_ssfr > training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                        bin_edges_ssfr = np.arange(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+                                                   max_bin_edge_ssfr + bin_widths_ssfr, bin_widths_ssfr)
+                    else:
+                        bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
+
+            else:
+                bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
+            
+            mean_ssfr_true = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
+
+            bin_ssfr_means = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                               bins=bin_edges_ssfr, statistic='mean')
+        #                 bin_stats_stds = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+        #                                                   bins=bin_edges, statistic=np.std)
+            mean_ssfr_pred = bin_ssfr_means[0]
+        #                 pred_std_ssfr_log = bin_stats_stds[0]
+        
+            pred_ssfr.append(mean_ssfr_pred.copy())
+            true_ssfr.append(mean_ssfr_true.copy())
+            redshifts_ssfr.append(redshift)
+            pred_bin_centers_ssfr.append([(bin_edges_ssfr[i] + bin_edges_ssfr[i+1])/2 for i in range(len(bin_edges_ssfr)-1)])
+            obs_bin_centers_ssfr.append(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_centers'])
+            acceptable_stellar_mass_intervals.append(
+                [training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+                training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]]
+            )
+            
+            todo: fixa get_functions funktionaliteten, kanske helt enkelt dela upp i tva olika funktioner?
+                
+        return [pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, acceptable_stellar_mass_intervals]
+            
+    
+    else:
+        
+        loss = 0
+        dist_outside = 0
+
+        for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
+
+            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+        
+            bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
+        
+            nr_points_outside_stellar_mass_range = \
+                np.sum(predicted_stellar_mass_log[relevant_inds] < 
+                      training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0]) \
+              + np.sum(predicted_stellar_mass_log[relevant_inds] > 
+                      training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1])
+            tot_nr_points_redshift = len(predicted_stellar_mass_log[relevant_inds])
+            
+            # sum up distances outside the accepted range
+            inds_below = predicted_stellar_mass_log[relevant_inds] < \
+                training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0]
+            inds_above = predicted_stellar_mass_log[relevant_inds] > \
+                training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]
+            dist_outside += np.sum(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0] \
+                                     - predicted_stellar_mass_log[relevant_inds][inds_below])
+            dist_outside += np.sum(predicted_stellar_mass_log[relevant_inds][inds_above] \
+                                     - training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1])
+        
+            mean_ssfr_true = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
+            errors_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
+
+            n_bins_ssfr = len(bin_edges_ssfr)-1
+            bin_ssfr_means = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+                                               bins=bin_edges_ssfr, statistic='mean')
+        #                 bin_stats_stds = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+        #                                                   bins=bin_edges, statistic=np.std)
+            mean_ssfr_pred = bin_ssfr_means[0]
+        #                 pred_std_ssfr_log = bin_stats_stds[0]
+
+
+            non_nan_indeces = np.invert(np.isnan(mean_ssfr_pred))
+
+#             if bin_widths_ssfr < min_bin_width:
+#                 min_bin_width = bin_widths_ssfr
+            nr_empty_bins = np.sum(np.invert(non_nan_indeces))
+
+            if np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_ssfr > 0.8:
+                loss += np.sum(np.power(mean_ssfr_true[non_nan_indeces] - mean_ssfr_pred[non_nan_indeces], 2) \
+                                / errors_ssfr[non_nan_indeces]) / n_bins_ssfr
+            elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_ssfr < 0.8:
+                loss += (np.sum(np.power(mean_ssfr_true[non_nan_indeces] - mean_ssfr_pred[non_nan_indeces], 2) \
+                                / errors_ssfr[non_nan_indeces]) / n_bins_ssfr) + np.sum(np.invert(non_nan_indeces))
+            else:
+                loss += 1000
+        
+        return [loss, dist_outside, nr_points_outside_stellar_mass_range]
+
+
+def loss_func_obs_stats(model, training_data_dict, real_obs=True, data_type='train', get_functions=False, full_range=False):
     
     np.seterr(over='raise', divide='raise')
     
@@ -747,7 +873,7 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
     
     else:
         
-        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, mode=mode)
+        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
         
         sfr_index = training_data_dict['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
@@ -795,76 +921,132 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
             redshifts_fq = []
             pred_bin_centers_fq = []
             obs_bin_centers_fq = []
+            
+            predicted_stellar_masses_redshift = []
+            
+        acceptable_interval_redshift = []
 
-        nr_empty_bins_redshift = np.zeros(len(training_data_dict['unique_redshifts']))
+        nr_empty_bins_redshift = np.zeros(len(training_data_dict['unique_redshifts']), dtype='int')
+        frac_outside_redshift = np.zeros(len(training_data_dict['unique_redshifts']))
+        dist_outside_tot = 0
         
         tot_score = 0
 
         for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
             
             redshift_score = 0
+            
+            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+            tot_nr_points_redshift = len(predicted_stellar_mass_log[relevant_inds])
 
             ############### mean SSFR ###############
-
-            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(mode)] == redshift
-
-            min_bin_width = 1e20
-            nr_empty_bins = 0
             
-            if not get_functions:
-                bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
-                bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
-                
-                nr_points_outside_stellar_mass_range = np.sum(predicted_stellar_mass_log[relevant_inds] < bin_edges_ssfr[0]) \
-                                                       + np.sum(predicted_stellar_mass_log[relevant_inds] > bin_edges_ssfr[-1])
-                tot_nr_points = len(predicted_stellar_mass_log[relevant_inds])
-                
-            else:
-
-                if full_range:
-                    bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
-                    
-                    max_stellar_mass = np.amax(predicted_stellar_mass_log)
-                    min_stellar_mass = np.amin(predicted_stellar_mass_log)
-                    min_bin_edge_ssfr = np.floor(min_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
-                    max_bin_edge_ssfr = np.ceil(max_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
-                    
-                    bin_edges_ssfr = np.arange(min_bin_edge_ssfr, max_bin_edge_ssfr + bin_widths_ssfr, bin_widths_ssfr)
-
-                else:
-                    bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
-
-            mean_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
-            errors_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
-
-            n_bins_ssfr = len(bin_edges_ssfr)-1
-            bin_ssfr_means = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
-                                               bins=bin_edges_ssfr, statistic='mean')
-#                 bin_stats_stds = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
-#                                                   bins=bin_edges, statistic=np.std)
-            mean_pred_ssfr = bin_ssfr_means[0]
-#                 pred_std_ssfr_log = bin_stats_stds[0]
-
+            ssfr_output = mean_ssfr_loss(training_data_dict, predicted_stellar_mass_log, 
+                                         ssfr_log, data_type, get_functions, full_range)
+            loss, dist_outside, nr_points_outside_stellar_mass_range = mean_ssfr_loss(training_data_dict, predicted_stellar_mass_log, 
+                                                                                      ssfr_log, data_type, get_functions, full_range)
             if get_functions:
-                pred_ssfr.append(mean_pred_ssfr.copy())
-                true_ssfr.append(mean_ssfr.copy())
-                redshifts_ssfr.append(redshift)
-                pred_bin_centers_ssfr.append([(bin_edges_ssfr[i] + bin_edges_ssfr[i+1])/2 for i in range(len(bin_edges_ssfr)-1)])
-                obs_bin_centers_ssfr.append(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_centers'])
+                
+            elif:
+                loss, dist_outside, nr_points_outside_stellar_mass_range = ssfr_output
+                redshift_score += loss
+                dist_outside_tot += dist_outside
+            
+            # remove when working
+            min_bin_width = 1e20
 
-            else: # keep processing the predictions to get a score
+#             relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
 
-                non_nan_indeces = np.invert(np.isnan(mean_pred_ssfr))
+#             min_bin_width = 1e20
+#             nr_empty_bins = 0
+            
+#             if not get_functions:
+#                 bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
+#                 bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
+                
+#             else:
+                
+#                 predicted_stellar_masses_redshift.append(predicted_stellar_mass_log[relevant_inds])
+#                 if full_range:
+#                     bin_widths_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_widths']
+                    
+#                     min_stellar_mass = np.amin(predicted_stellar_mass_log)
+#                     max_stellar_mass = np.amax(predicted_stellar_mass_log)
+#                     min_bin_edge_ssfr = np.floor(min_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
+#                     max_bin_edge_ssfr = np.ceil(max_stellar_mass * 1/bin_widths_ssfr)*bin_widths_ssfr
+                    
+#                     # make sure that the predicted range is wider than the observed range
+#                     if min_bin_edge_ssfr < training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0]:
+                        
+#                         if max_bin_edge_ssfr > training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+#                             bin_edges_ssfr = np.arange(min_bin_edge_ssfr, max_bin_edge_ssfr + bin_widths_ssfr, bin_widths_ssfr)
+#                         else:
+#                             bin_edges_ssfr = np.arange(min_bin_edge_ssfr, training_data_dict['ssfr_data']
+#                                                        ['{:.1f}'.format(redshift)]['bin_edges'][-1] + bin_widths_ssfr, 
+#                                                        bin_widths_ssfr)
+#                     else:
+                        
+#                         if max_bin_edge_ssfr > training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+#                             bin_edges_ssfr = np.arange(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+#                                                        max_bin_edge_ssfr + bin_widths_ssfr, bin_widths_ssfr)
+#                         else:
+#                             bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
 
-                if bin_widths_ssfr < min_bin_width:
-                    min_bin_width = bin_widths_ssfr
-                    nr_empty_bins = np.sum(np.invert(non_nan_indeces))
+#                 else:
+#                     bin_edges_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges']
+                    
+                
+#             # the acceptable interval is set by the ssfr bin edges atm
+#             acceptable_interval_redshift.append(
+#                 [training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+#                 training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]]
+#             )
+#             nr_points_outside_stellar_mass_range = \
+#                 np.sum(predicted_stellar_mass_log[relevant_inds] < acceptable_interval_redshift[i_red][0]) \
+#               + np.sum(predicted_stellar_mass_log[relevant_inds] > acceptable_interval_redshift[i_red][1])
+#             tot_nr_points_redshift = len(predicted_stellar_mass_log[relevant_inds])
+#             # sum up distances outside the accepted range
+#             inds_below = predicted_stellar_mass_log[relevant_inds] < acceptable_interval_redshift[i_red][0]
+#             inds_above = predicted_stellar_mass_log[relevant_inds] > acceptable_interval_redshift[i_red][1]
+#             dist_outside_tot += np.sum(acceptable_interval_redshift[i_red][0] \
+#                                      - predicted_stellar_mass_log[relevant_inds][inds_below])
+#             dist_outside_tot += np.sum(predicted_stellar_mass_log[relevant_inds][inds_above] \
+#                                      - acceptable_interval_redshift[i_red][1])
 
-                if np.sum(non_nan_indeces) > 0:
-                    redshift_score += np.sum(np.power(mean_ssfr[non_nan_indeces] - mean_pred_ssfr[non_nan_indeces], 2) \
-                                    / errors_ssfr[non_nan_indeces]) / np.shape(errors_ssfr[non_nan_indeces])[0]
-                else:
-                    redshift_score += 1000
+#             mean_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['mean_ssfr']
+#             errors_ssfr = training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['errors']
+
+#             n_bins_ssfr = len(bin_edges_ssfr)-1
+#             bin_ssfr_means = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+#                                                bins=bin_edges_ssfr, statistic='mean')
+# #                 bin_stats_stds = binned_statistic(predicted_stellar_mass_log[relevant_inds], ssfr_log[relevant_inds], 
+# #                                                   bins=bin_edges, statistic=np.std)
+#             mean_pred_ssfr = bin_ssfr_means[0]
+# #                 pred_std_ssfr_log = bin_stats_stds[0]
+
+#             if get_functions:
+#                 pred_ssfr.append(mean_pred_ssfr.copy())
+#                 true_ssfr.append(mean_ssfr.copy())
+#                 redshifts_ssfr.append(redshift)
+#                 pred_bin_centers_ssfr.append([(bin_edges_ssfr[i] + bin_edges_ssfr[i+1])/2 for i in range(len(bin_edges_ssfr)-1)])
+#                 obs_bin_centers_ssfr.append(training_data_dict['ssfr_data']['{:.1f}'.format(redshift)]['bin_centers'])
+
+#             else: # keep processing the predictions to get a score
+
+#                 non_nan_indeces = np.invert(np.isnan(mean_pred_ssfr))
+
+#                 if bin_widths_ssfr < min_bin_width:
+#                     min_bin_width = bin_widths_ssfr
+#                     nr_empty_bins = np.sum(np.invert(non_nan_indeces))
+
+#                 if np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_ssfr > 0.8:
+#                     redshift_score += np.sum(np.power(mean_ssfr[non_nan_indeces] - mean_pred_ssfr[non_nan_indeces], 2) \
+#                                     / errors_ssfr[non_nan_indeces]) / n_bins_ssfr
+#                 elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_ssfr < 0.8:
+#                     redshift_score += (np.sum(np.power(mean_ssfr[non_nan_indeces] - mean_pred_ssfr[non_nan_indeces], 2) \
+#                                     / errors_ssfr[non_nan_indeces]) / n_bins_ssfr) + np.sum(np.invert(non_nan_indeces))
+#                 else:
+#                     redshift_score += 1000
 
             ############### SMF ###############  
                 
@@ -880,7 +1062,22 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     min_bin_edge_smf = np.floor(min_stellar_mass * 1/bin_widths_smf)*bin_widths_smf
                     max_bin_edge_smf = np.ceil(max_stellar_mass * 1/bin_widths_smf)*bin_widths_smf
                     
-                    bin_edges_smf = np.arange(min_bin_edge_smf, max_bin_edge_smf + bin_widths_smf, bin_widths_smf)
+                    # make sure that the predicted range is wider than the observed range
+                    if min_bin_edge_smf < training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges'][0]:
+                        
+                        if max_bin_edge_smf > training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                            bin_edges_smf = np.arange(min_bin_edge_smf, max_bin_edge_smf + bin_widths_smf, bin_widths_smf)
+                        else:
+                            bin_edges_smf = np.arange(min_bin_edge_smf, training_data_dict['smf_data']
+                                                       ['{:.1f}'.format(redshift)]['bin_edges'][-1] + bin_widths_smf, 
+                                                       bin_widths_smf)
+                    else:
+                        
+                        if max_bin_edge_smf > training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                            bin_edges_smf = np.arange(training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+                                                       max_bin_edge_smf + bin_widths_smf, bin_widths_smf)
+                        else:
+                            bin_edges_smf = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges']
 
                 else:
                     bin_edges_smf = training_data_dict['smf_data']['{:.1f}'.format(redshift)]['bin_edges']
@@ -902,9 +1099,9 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
 
             # since we're only using a subset of the original data points, compensate for this
             pred_smf = pred_smf * training_data_dict['original_nr_data_points_by_redshift'][i_red] \
-                                / len(training_data_dict['{}_indices'.format(mode)])
+                                / len(training_data_dict['{}_indices'.format(data_type)])
 #                 pred_smf = pred_smf * training_data_dict['original_nr_data_points'] \
-#                                     / len(training_data_dict['{}_indices'.format(mode)])
+#                                     / len(training_data_dict['{}_indices'.format(data_type)])
 
             non_nan_indeces = np.invert(np.isnan(pred_smf))
             pred_smf[non_nan_indeces] = np.log10(pred_smf[non_nan_indeces])
@@ -922,11 +1119,12 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     min_bin_width = bin_widths_smf
                     nr_empty_bins = np.sum(np.invert(non_nan_indeces))
 
-
-                if np.sum(non_nan_indeces) > 0:
+                if np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_smf > 0.8:
                     redshift_score += np.sum(np.power(smf[non_nan_indeces] - pred_smf[non_nan_indeces], 2) \
-                                    / errors_smf[non_nan_indeces]) \
-                                    / np.shape(errors_smf[non_nan_indeces])[0]
+                                    / errors_smf[non_nan_indeces]) / n_bins_smf
+                elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_smf < 0.8:
+                    redshift_score += (np.sum(np.power(smf[non_nan_indeces] - pred_smf[non_nan_indeces], 2) \
+                                    / errors_smf[non_nan_indeces]) / n_bins_smf) + np.sum(np.invert(non_nan_indeces))
                 else:
                     redshift_score += 1000
 
@@ -955,6 +1153,23 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     max_bin_edge_fq = np.ceil(max_stellar_mass * 1/bin_widths_fq)*bin_widths_fq
                     
                     bin_edges_fq = np.arange(min_bin_edge_fq, max_bin_edge_fq + bin_widths_fq, bin_widths_fq)
+                    
+                    # make sure that the predicted range is wider than the observed range
+                    if min_bin_edge_fq < training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges'][0]:
+                        
+                        if max_bin_edge_fq > training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                            bin_edges_fq = np.arange(min_bin_edge_fq, max_bin_edge_fq + bin_widths_fq, bin_widths_fq)
+                        else:
+                            bin_edges_fq = np.arange(min_bin_edge_fq, training_data_dict['fq_data']
+                                                       ['{:.1f}'.format(redshift)]['bin_edges'][-1] + bin_widths_fq, 
+                                                       bin_widths_fq)
+                    else:
+                        
+                        if max_bin_edge_fq > training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges'][-1]:
+                            bin_edges_fq = np.arange(training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges'][0], 
+                                                       max_bin_edge_fq + bin_widths_fq, bin_widths_fq)
+                        else:
+                            bin_edges_fq = training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges']
 
                 else:
                     bin_edges_fq = training_data_dict['fq_data']['{:.1f}'.format(redshift)]['bin_edges']
@@ -1006,33 +1221,55 @@ def loss_func_obs_stats(model, training_data_dict, real_obs=True, mode='train', 
                     min_bin_width = bin_widths_fq
                     nr_empty_bins = np.sum(np.invert(non_nan_indeces))
 
-                if np.sum(non_nan_indeces) > 0:
+                if np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_fq > 0.8:
                     redshift_score += np.sum(np.power(fq_true[non_nan_indeces] - fq_pred[non_nan_indeces], 2) \
-                                    / errors_fq[non_nan_indeces]) \
-                                    / np.shape(errors_fq[non_nan_indeces])[0]
+                                    / errors_fq[non_nan_indeces]) / n_bins_fq
+#                     print('in the if, nr non-empty bins/tot nr of bins: ', np.sum(np.invert(non_nan_indeces)), n_bins_fq)
+                    
+                elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins_fq < 0.8:
+                    redshift_score += (np.sum(np.power(fq_true[non_nan_indeces] - fq_pred[non_nan_indeces], 2) \
+                                    / errors_fq[non_nan_indeces]) / n_bins_fq) + np.sum(np.invert(non_nan_indeces))
+#                     print('in the elif, nr non-empty bins/tot nr of bins: ', np.sum(np.invert(non_nan_indeces)), n_bins_fq)
                 else:
                     redshift_score += 1000
 
+            nr_empty_bins_redshift[i_red] = nr_empty_bins
+            frac_outside = nr_points_outside_stellar_mass_range/tot_nr_points_redshift
+#             print(frac_outside)
+            frac_outside_redshift[i_red] = frac_outside
+            
             if not get_functions:
-                nr_empty_bins_redshift[i_red] = nr_empty_bins
-                frac_outside = nr_points_outside_stellar_mass_range/tot_nr_points
-                theta = 10
+                
                 if frac_outside > .9:
                     redshift_score += 1000
                 else:
-                    redshift_score *= (1 + np.exp((frac_outside - 0.1) * theta))
+                    xi = 5
+#                     print(dist_outside_tot/tot_nr_points_redshift)
+                    redshift_score*= np.exp(xi * dist_outside_tot/tot_nr_points_redshift)
+                    
+#                     slope = 10
+#                     redshift_score *= (1 + slope*frac_outside)
+                    
+#                     theta = 10
+#                     redshift_score *= (1 + np.exp((frac_outside - 0.1) * theta))
                 
                 tot_score += redshift_score
                 
-        if not get_functions:
-            nr_empty_bins_tot = np.sum(nr_empty_bins_redshift)
-            tot_score = tot_score * 1.1**(nr_empty_bins_tot)
+        
+#         if not get_functions:
+            # empty bin punish
+#             nr_empty_bins_tot = np.sum(nr_empty_bins_redshift)
+#             tot_score = tot_score * 1.1**(nr_empty_bins_tot)
 
         if get_functions:
             return {
                 'ssfr': [pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr],
                 'smf': [pred_smf_list, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf],
-                'fq': [pred_fq_list, true_fq_list, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq]
+                'fq': [pred_fq_list, true_fq_list, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq],
+                'predicted_stellar_masses_redshift': predicted_stellar_masses_redshift,
+                'nr_empty_bins_redshift': nr_empty_bins_redshift,
+                'fraction_of_points_outside_redshift': frac_outside_redshift,
+                'acceptable_interval_redshift': acceptable_interval_redshift
             }
         else:
             return tot_score
