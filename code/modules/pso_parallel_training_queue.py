@@ -35,10 +35,10 @@ class Feed_Forward_Neural_Network():
                                    pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
-                  save_all_networks=False):
+                  save_all_networks=False, draw_figures=True, loss_dict=None):
         
         self.pso_swarm.train_network(nr_iterations, training_data_dict,
-                                     std_penalty, speed_check, verbatim, save_all_networks)
+                                     std_penalty, speed_check, verbatim, save_all_networks, draw_figures, loss_dict)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -92,7 +92,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
-    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, save_all_networks):
+    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, save_all_networks, draw_figs,
+                      loss_dict):
         
         self.training_data_dict = training_data_dict
         self.save_all_networks = save_all_networks
@@ -101,26 +102,31 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.std_penalty = std_penalty
         self.verbatim = verbatim
         
+        self.draw_figs = draw_figs
+        
         with open('progress.txt', 'w+') as f:
             
             self.inp_queue = mp.Queue()
             self.results_queue = mp.Queue()
             self.print_dist_queue = mp.Queue()
-            self.draw_figs_queue = mp.Queue()
+            if draw_figs:
+                self.figure_drawer_queue = mp.Queue()
             
             process_list = []
             for i in range(self.nr_processes):
                 process = mp.Process(target=particle_evaluator, args=(self.inp_queue, self.results_queue, training_data_dict, 
                                                                       self.reinf_learning, self.train_on_real_obs, 
-                                                                      self.network_args, self.weight_shapes))
+                                                                      self.network_args, self.weight_shapes, loss_dict))
                 process_list.append(process)
                 
             distance_process = mp.Process(target=save_distances, args=(self.print_dist_queue, self.parent.name))
             process_list.append(distance_process)
             
-            draw_figs_process = mp.Process(target=draw_figs, args=(self.draw_figs_queue, self.parent.name, self.weight_shapes, 
-                                                                   self.network_args, training_data_dict))
-            process_list.append(draw_figs_process)
+            if draw_figs:
+                figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.parent.name, 
+                                                                               self.weight_shapes, self.network_args, 
+                                                                               training_data_dict))
+                process_list.append(figure_drawer_process)
             
             for process in process_list:
                 process.start()
@@ -264,8 +270,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
                     self.time_since_val_improvement = 0
                     
-                    # draw the progress figures
-                    self.draw_figs_queue.put([self.swarm_best_pos_val, iteration])
+                    if self.draw_figs:
+                        self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration])
                     
                     # save the model
                     if self.save_all_networks:
@@ -417,7 +423,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         
 def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learning, train_on_real_obs, network_args, 
-                       weight_shapes):
+                       weight_shapes, loss_dict):
 
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args
@@ -450,11 +456,13 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 mode_of_hs = str_list[3]
                 
             if data_type == 'train':
-                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type)
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type, 
+                                       loss_dict=loss_dict)
                 results_queue.put([score, particle_nr])
             elif data_type == 'val':
                 
-                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type)
+                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type,
+                                       loss_dict=loss_dict)
                 y_pred = predict_points(model, training_data_dict, original_units=False, data_type=data_type)
 
                 stds = np.std(y_pred, axis=0)
@@ -501,11 +509,11 @@ def get_weights(position, weight_shapes): # get the weight list corresponding to
         
     return weight_mat_list
 
-def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type):
+def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type, loss_dict):
     
     if reinf_learning:
             
-        score = loss_func_obs_stats(model, training_data_dict, real_obs=train_on_real_obs, data_type=data_type)
+        score = loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=train_on_real_obs, data_type=data_type)
             
     else:
 
@@ -544,7 +552,7 @@ def save_distances(queue, model_name):
 
         pickle.dump(distance_dict, open(file_path, 'wb'))
 
-def draw_figs(queue, model_name, weight_shapes, network_args, training_data_dict):
+def figure_drawer(queue, model_name, weight_shapes, network_args, training_data_dict):
     
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args

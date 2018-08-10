@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units, loss_func_obs_stats, get_unit_dict
+from data_processing import predict_points, convert_units, loss_func_obs_stats, get_unit_dict, plots_obs_stats
 from scipy import stats
 import corner
 
@@ -848,10 +848,11 @@ def get_scatter_comparison_plots_old(model, training_data_dict, unit_dict, x_axi
     return fig
 
 
-def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_feature, y_axis_feature, supervised_pso=False, 
+def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_feature, supervised_pso=False, 
                               galaxies=None, title=None, data_type='test', marker_size=5, y_min=None, y_max=None, x_min=None, 
-                              x_max=None, predicted_points=None):
+                              x_max=None, predicted_points=None, n_points=int(1e4)):
     
+    unit_dict = get_unit_dict()
     
     if not y_axis_feature in training_data_dict['output_features']:
         print('y axis feature not available (%s). Choose between\n%s' % 
@@ -865,12 +866,16 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
         if supervised_pso:
             x_data = training_data_dict['y_{}'.format(data_type)]
         else:
-            x_data = training_data_dict['output_{}_dict'.format(data_type)][x_axis_feature]
+            
+            x_data = np.zeros(shape=(len(training_data_dict['output_{}_dict'.format(data_type)][x_axis_feature]), 
+                                     len(training_data_dict['output_features'])))
+            for i_feat, output_feat in enumerate(training_data_dict['output_features']):
+                x_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
             
         # rescale data
         x_data = convert_units(x_data, training_data_dict['norm']['output'], back_to_original=True, 
                                conv_values=training_data_dict['conv_values_output'])
-        x_data = x_data[:, x_feat_index]
+        x_data = x_data[:n_points, x_feat_index]
             
     elif x_axis_feature in training_data_dict['input_features']:
         
@@ -881,25 +886,27 @@ def get_real_vs_pred_same_fig(model, training_data_dict, unit_dict, x_axis_featu
         # rescale data
         x_data = convert_units(x_data, training_data_dict['norm']['input'], back_to_original=True, 
                                conv_values=training_data_dict['conv_values_input'])
-        x_data = x_data[:, x_feat_index]
+        x_data = x_data[:n_points, x_feat_index]
         
-        
-           
     y_feat_index = training_data_dict['output_features'].index(y_axis_feature)
     
     if predicted_points is None:
-        predicted_points = predict_points(model, training_data_dict, mode=data_type, original_units=True)
+        predicted_points = predict_points(model, training_data_dict, data_type=data_type, original_units=True)
         
-    pred_y_data = predicted_points[:, y_feat_index]
+    pred_y_data = predicted_points[:n_points, y_feat_index]
         
     if supervised_pso:
         true_y_data = training_data_dict['y_{}'.format(data_type)][:, y_feat_index]
         true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
                                          back_to_original=True, conv_values=training_data_dict['conv_values_output'])
     else:
-        true_y_data = training_data_dict['output_{}_dict'.format(data_type)][y_axis_feature][:, y_feat_index]
+        true_y_data = np.zeros(shape=(len(training_data_dict['output_{}_dict'.format(data_type)][y_axis_feature]), 
+                                      len(training_data_dict['output_features'])))
+        for i_feat, output_feat in enumerate(training_data_dict['output_features']):
+            true_y_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
         true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
-                                         back_to_original=True, conv_values=training_data_dict['conv_values_output'])
+                                    back_to_original=True, conv_values=training_data_dict['conv_values_output'])
+        true_y_data = true_y_data[:n_points, y_feat_index]
 
     y_label = 'log($[{}])$'.format(unit_dict[y_axis_feature])
     
@@ -1122,18 +1129,17 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
     
     unit_dict = get_unit_dict()
     
-    function_dict = loss_func_obs_stats(model, training_data_dict, real_obs=False, data_type=data_type, get_functions=True, 
-                                        full_range=full_range)
+    function_dict = plots_obs_stats(model, training_data_dict, real_obs=False, data_type=data_type, full_range=full_range)
     
     redshift_index = training_data_dict['unique_redshifts'].index(redshift)
     
-    pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts = function_dict['ssfr']
-    pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts = function_dict['smf']
-    pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts = function_dict['fq']
-    predicted_stellar_masses_redshift = function_dict['predicted_stellar_masses_redshift']
-    nr_empty_bins_redshift = function_dict['nr_empty_bins_redshift']
-    frac_outside_redshift = function_dict['fraction_of_points_outside_redshift']
-    acceptable_interval_redshift = function_dict['acceptable_interval_redshift']
+    pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts, obs_mass_interval_ssfr = function_dict['ssfr']
+    pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts, obs_mass_interval_smf = function_dict['smf']
+    pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts, obs_mass_interval_fq = function_dict['fq']
+#     predicted_stellar_masses_redshift = function_dict['predicted_stellar_masses_redshift']
+#     nr_empty_bins_redshift = function_dict['nr_empty_bins_redshift']
+#     frac_outside_redshift = function_dict['fraction_of_points_outside_redshift']
+#     acceptable_interval_redshift = function_dict['acceptable_interval_redshift']
     
     pred_data = [pred_ssfr, pred_smf, pred_fq]
     true_data = [true_ssfr, true_smf, true_fq]
@@ -1163,15 +1169,15 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
             
         plt.legend(['DNN', 'Emerge'], loc=location, fontsize='xx-large')
 
-    ax = plt.subplot(2,2,4)
+#     ax = plt.subplot(2,2,4)
     
-    plt.hist(predicted_stellar_masses_redshift[redshift_index], bins=100, log=True)
-    plt.xlabel(x_label, fontsize=15)   
+#     plt.hist(predicted_stellar_masses_redshift[redshift_index], bins=100, log=True)
+#     plt.xlabel(x_label, fontsize=15)   
     
     if title is not None:
-        title = title + '\n\nz = {:2.1f}, {:2.0f}% of points outside interval [{:.2f}, {:.2f}], {:d} empty bins'.format(
-        redshifts[redshift_index], 100 * frac_outside_redshift[redshift_index], acceptable_interval_redshift[redshift_index][0], 
-        acceptable_interval_redshift[redshift_index][1], nr_empty_bins_redshift[redshift_index])
+#         title = title + '\n\nz = {:2.1f}, {:2.0f}% of points outside interval [{:.2f}, {:.2f}], {:d} empty bins'.format(
+#         redshifts[redshift_index], 100 * frac_outside_redshift[redshift_index], acceptable_interval_redshift[redshift_index][0], 
+#         acceptable_interval_redshift[redshift_index][1], nr_empty_bins_redshift[redshift_index])
         plt.suptitle(title, y=.96, fontsize=20)
         
     if save:

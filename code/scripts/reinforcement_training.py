@@ -33,6 +33,7 @@ network_name = 'testing'
 # network_name = '6x6_tanh_xi5_loss_point9_cutoff_no_empty_bin_punish_nbin_weighted_loss'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 save_all_nets = True
+draw_figs = True
 
 ### Network parameters
 nr_hidden_layers = 6
@@ -44,8 +45,14 @@ std_penalty = False
 norm = {'input': 'zero_mean_unit_std',
         'output': 'zero_mean_unit_std'} # 'none',   'zero_mean_unit_std',   'zero_to_one'
 
+### Loss parameters
+loss_dict = {
+    'dist_outside_punish': 'exp',
+    'exp_factor': 10
+}
+
 ### PSO parameters
-nr_processes = 1
+nr_processes = 30
 nr_iterations = 2000
 min_std_tol = 0.01                # minimum allowed std for any parameter
 pso_param_dict = {
@@ -75,7 +82,8 @@ network = Feed_Forward_Neural_Network(nr_hidden_layers, nr_neurons_per_layer, in
                                       activation_function, output_activation, regularisation_strength, network_name)
 network.setup_pso(pso_param_dict, reinf_learning=reinforcement_learning, real_observations=real_observations, 
                   nr_processes=nr_processes)
-network.train_pso(nr_iterations, training_data_dict, std_penalty=std_penalty, verbatim=verbatim, save_all_networks=save_all_nets)
+network.train_pso(nr_iterations, training_data_dict, std_penalty=std_penalty, verbatim=verbatim, save_all_networks=save_all_nets,
+                  draw_figures=draw_figs, loss_dict=loss_dict)
 
 
 
