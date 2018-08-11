@@ -15,10 +15,10 @@ np.random.seed(999)
 random.seed(999)
 
 ### General parameters
-total_set_size = 2.9e4 # how many examples will be used for training+validation+testing
-train_size = 1.5e4
-val_size = 1e4
-test_size = .4e4
+total_set_size = 2.9e5 # how many examples will be used for training+validation+testing
+train_size = 1.5e5
+val_size = 1e5
+test_size = .4e5
 input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
 redshifts = [0]#,.1,.2,.5,1,2,3,4,6,8]
@@ -52,7 +52,7 @@ loss_dict = {
     'smf_weight': 1,
     'shm_weight': 2,
     'dist_outside_punish': 'exp',
-    'dist_outside_factor': 10,
+    'dist_outside_factor': 20,
     'min_filled_bin_frac': 0.8
 }
 
@@ -71,16 +71,15 @@ pso_param_dict = {
 }
 
 if use_config_name:
-    redshift_string = '-'.join(['{:d}'.format(red*10) for red in redshifts])
-    weight_string = '-'.join(loss_dict['fq_weight'], loss_dict['ssfr_weight'], loss_dict['smf_weight'], loss_dict['shm_weight'])
-    network_name = '{:d}x{:d}_{:2.0e}points_redshifts{}_{}_{}{}_loss_minFilledBinFrac{:d}_fq-ssfr-smf-shm_weights_{}'.format(
+    redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
+    weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
+                              str(loss_dict['shm_weight'])])
+    network_name = '{:d}x{:d}_{:.1e}points_redshifts{}_{}_{}{}_loss_minFilledBinFrac{:03.0f}_fq-ssfr-smf-shm_weights_{}'.format(
         nr_hidden_layers, nr_neurons_per_layer, total_set_size, redshift_string, activation_function, 
         loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], 100 * loss_dict['min_filled_bin_frac'],
         weight_string
     )
 else:
-    import shutil
-    shutil.rmtree('testing')
     network_name = 'testing'
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""

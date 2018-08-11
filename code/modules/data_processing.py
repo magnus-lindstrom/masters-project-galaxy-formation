@@ -876,11 +876,11 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
         
         if dist_outside_punish == 'exp':
         
-            xi = loss_dict['exp_factor']
+            xi = loss_dict['dist_outside_factor']
             loss*= np.exp(xi * dist_outside/tot_nr_points)
 
         elif dift_outside_punish == 'lin':
-            slope = loss_dict['lin_slope']
+            slope = loss_dict['dist_outside_factor']
             redshift_score *= (1 + slope*frac_outside)
             
         else:

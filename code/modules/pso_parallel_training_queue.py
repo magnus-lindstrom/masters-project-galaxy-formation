@@ -445,7 +445,9 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
             str_list = string.split(' ')
             
             data_type = str_list[0]
-            if len(str_list) == 2:
+            if len(str_list) == 1:
+                pass
+            elif len(str_list) == 2:
                 model_name = str_list[1]
             elif len(str_list) == 3:
                 model_name = str_list[1]
@@ -454,6 +456,11 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 model_name = str_list[1]
                 iteration = str_list[2]
                 mode_of_hs = str_list[3]
+            else:
+                print(string)
+                print(str_list)
+                print('wrong string sent')
+                break
                 
             if data_type == 'train':
                 score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type, 
