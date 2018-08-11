@@ -29,8 +29,8 @@ real_observations = False
 
 verbatim = True
 
-network_name = 'testing'
-# network_name = '6x6_tanh_xi5_loss_point9_cutoff_no_empty_bin_punish_nbin_weighted_loss'
+# network_name = 'testing'
+use_config_name = True
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 save_all_nets = True
 draw_figs = True
@@ -47,8 +47,13 @@ norm = {'input': 'zero_mean_unit_std',
 
 ### Loss parameters
 loss_dict = {
+    'fq_weight': 1,
+    'ssfr_weight': 1,
+    'smf_weight': 1,
+    'shm_weight': 2,
     'dist_outside_punish': 'exp',
-    'exp_factor': 10
+    'dist_outside_factor': 10,
+    'min_filled_bin_frac': 0.8
 }
 
 ### PSO parameters
@@ -64,6 +69,19 @@ pso_param_dict = {
     'patience_parameter': 'train',
     'restart_check_interval': 200
 }
+
+if use_config_name:
+    redshift_string = '-'.join(['{:d}'.format(red*10) for red in redshifts])
+    weight_string = '-'.join(loss_dict['fq_weight'], loss_dict['ssfr_weight'], loss_dict['smf_weight'], loss_dict['shm_weight'])
+    network_name = '{:d}x{:d}_{:2.0e}points_redshifts{}_{}_{}{}_loss_minFilledBinFrac{:d}_fq-ssfr-smf-shm_weights_{}'.format(
+        nr_hidden_layers, nr_neurons_per_layer, total_set_size, redshift_string, activation_function, 
+        loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], 100 * loss_dict['min_filled_bin_frac'],
+        weight_string
+    )
+else:
+    import shutil
+    shutil.rmtree('testing')
+    network_name = 'testing'
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 

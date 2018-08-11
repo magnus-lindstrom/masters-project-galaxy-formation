@@ -1136,30 +1136,37 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
     pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts, obs_mass_interval_ssfr = function_dict['ssfr']
     pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts, obs_mass_interval_smf = function_dict['smf']
     pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts, obs_mass_interval_fq = function_dict['fq']
+    pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm = function_dict['shm']
 #     predicted_stellar_masses_redshift = function_dict['predicted_stellar_masses_redshift']
 #     nr_empty_bins_redshift = function_dict['nr_empty_bins_redshift']
 #     frac_outside_redshift = function_dict['fraction_of_points_outside_redshift']
 #     acceptable_interval_redshift = function_dict['acceptable_interval_redshift']
     
-    pred_data = [pred_ssfr, pred_smf, pred_fq]
-    true_data = [true_ssfr, true_smf, true_fq]
-    pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq]
-    obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq]
+    pred_data = [pred_ssfr, pred_smf, pred_fq, pred_shm]
+    true_data = [true_ssfr, true_smf, true_fq, true_shm]
+    pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq, pred_bin_centers_shm]
+    obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq, obs_bin_centers_shm]
     
-    x_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
+    x_labels = [
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Halo_mass'])
+    ]
     y_labels = [
         'log($[{}])$'.format(unit_dict['SSFR']),
         'log($[{}])$'.format(unit_dict['SMF']),
-        '${}$'.format(unit_dict['FQ'])
+        '${}$'.format(unit_dict['FQ']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass'])
     ]
     
     fig = plt.figure(figsize=(20,15))
-    for i in range(3):
+    for i in range(4):
         ax = plt.subplot(2,2,i+1)
 
         plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r+', markersize=15)
         plt.plot(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], 'b-')
-        plt.xlabel(x_label, fontsize=15)
+        plt.xlabel(x_labels[i], fontsize=15)
         plt.ylabel(y_labels[i], fontsize=15)
 
         if i == 2:

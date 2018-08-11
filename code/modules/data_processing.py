@@ -179,6 +179,9 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'train_indices': train_indices,
         'val_indices': val_indices,
         'test_indices': test_indices,
+        'original_halo_masses_train': galaxies[train_indices, data_keys['Halo_mass']],
+        'original_halo_masses_val': galaxies[val_indices, data_keys['Halo_mass']],
+        'original_halo_masses_test': galaxies[test_indices, data_keys['Halo_mass']],
         'original_nr_data_points_by_redshift': original_nr_data_points_by_redshift,
         'unique_redshifts': redshifts,
         'data_redshifts': data_redshifts
@@ -223,8 +226,6 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
             bin_centers = [item[0] for item in ssfr]
             mean_ssfr = [item[1] for item in ssfr]
             errors = [item[2] for item in ssfr]
-#             print('mean ssfr for redshift {:.1f}: ,'.format(redshift) ,mean_ssfr)
-#             print('errors for redshift {:.1f}: ,'.format(redshift) ,errors)
             
             redshift_data = {
                 'bin_centers': np.array(bin_centers),
@@ -268,7 +269,6 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
             
         training_data_dict['smf_data'] = smf_data
         
-        
         # store the relevant FQ data
         fq_directory = '/home/magnus/data/mock_data/fq/'
         fq_data = {}
@@ -298,6 +298,36 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
             fq_data['{:.1f}'.format(redshift)] = redshift_data
             
         training_data_dict['fq_data'] = fq_data
+        
+        # store the relevant SHM data
+        shm_directory = '/home/magnus/data/mock_data/stellar_halo_mass_relations/'
+        shm_data = {}
+        
+        for redshift in training_data_dict['unique_redshifts']:
+            
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(shm_directory + file_name + '.json', 'r') as f:
+                shm_list = json.load(f)
+                
+            parameter_dict = shm_list.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            bin_edges = parameter_dict['bin_edges']
+            
+            bin_centers = [item[0] for item in shm_list]
+            shm = [item[1] for item in shm_list]
+            errors = [item[2] for item in shm_list]
+            
+            redshift_data = {
+                'bin_centers': np.array(bin_centers),
+                'bin_widths': np.array(bin_widths),
+                'bin_edges': np.array(bin_edges),
+                'shm': np.array(shm),
+                'errors': np.array(errors)
+            }
+            
+            shm_data['{:.1f}'.format(redshift)] = redshift_data
+            
+        training_data_dict['shm_data'] = shm_data
     
     return training_data_dict
 
@@ -825,10 +855,12 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
 
 #         nr_empty_bins[i_red] = np.sum(np.invert(non_nan_indeces))
 
-        if np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins > 0.8:
+        if (np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins > loss_dict['min_filled_bin_frac']) \
+            or bin_feat_name == 'shm':
+        
             loss += np.sum(np.power(true_bin_feat_dist[non_nan_indeces] - pred_bin_feat_dist[non_nan_indeces], 2) \
                             / errors[non_nan_indeces]) / n_bins
-        elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins < 0.8:
+        elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins < loss_dict['min_filled_bin_frac']:
             loss += (np.sum(np.power(true_bin_feat_dist[non_nan_indeces] - pred_bin_feat_dist[non_nan_indeces], 2) \
                             / errors[non_nan_indeces]) / n_bins) + np.sum(np.invert(non_nan_indeces))
         else:
@@ -1014,7 +1046,7 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
 
         loss_ssfr, dist_outside = \
             binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'ssfr', data_type, loss_dict)
-        loss += loss_ssfr
+        loss += loss_dict['ssfr_weight'] * loss_ssfr
         dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_ssfr
 
@@ -1022,7 +1054,7 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
         
         loss_smf, dist_outside = \
             binned_loss(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, loss_dict)
-        loss += loss_smf
+        loss += loss_dict['smf_weight'] * loss_smf
         dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_smf
 
@@ -1030,9 +1062,20 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
 
         loss_fq, dist_outside = \
             binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict)
-        loss += loss_fq
+        loss += loss_dict['fq_weight'] * loss_fq
         dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_fq
+
+        ############### SHM ###############
+
+        loss_shm, dist_outside = \
+            binned_loss(training_data_dict, training_data_dict['original_halo_masses_{}'.format(data_type)], 
+                                                               predicted_stellar_mass_log, 'shm', data_type, loss_dict)
+        loss += loss_dict['shm_weight'] * loss_shm
+        dist_outside_tot += dist_outside
+#         nr_empty_bins =+ nr_empty_bins_fq
+
+        loss /= loss_dict['ssfr_weight'] + loss_dict['smf_weight'] + loss_dict['fq_weight'] + loss_dict['shm_weight']
     
         return loss
 
@@ -1099,12 +1142,17 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, data_type='train',
         pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq = \
             binned_dist_func(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, full_range)
         
-        
+        ############### SHM ###############
+
+        pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm = \
+            binned_dist_func(training_data_dict, training_data_dict['original_halo_masses_{}'.format(data_type)], 
+                             predicted_stellar_mass_log, 'shm', data_type, full_range)      
         
         return {
             'ssfr': [pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, obs_mass_interval_ssfr],
             'smf': [pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf, obs_mass_interval_smf],
-            'fq': [pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq]
+            'fq': [pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq],
+            'shm': [pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm]
 #             'predicted_stellar_masses_redshift': predicted_stellar_masses_redshift,
 #             'nr_empty_bins_redshift': nr_empty_bins_redshift,
 #             'fraction_of_points_outside_redshift': frac_outside_redshift,
