@@ -1,7 +1,6 @@
 import os
 from os.path import expanduser
 home_dir = expanduser("~")
-network_path = home_dir + '/code/pso_code/trained_networks/'
 import numpy as np
 import time
 import datetime
@@ -35,10 +34,10 @@ class Feed_Forward_Neural_Network():
                                    pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
-                  save_all_networks=False, draw_figures=True, loss_dict=None):
+                  draw_figures=True, loss_dict=None):
         
         self.pso_swarm.train_network(nr_iterations, training_data_dict,
-                                     std_penalty, speed_check, verbatim, save_all_networks, draw_figures, loss_dict)
+                                     std_penalty, speed_check, verbatim, draw_figures, loss_dict)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -74,6 +73,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.parent = parent
         self.reinf_learning = reinf_learning
         self.train_on_real_obs = real_observations
+        if real_observations:
+            self.obs_type = 'real_observations'
+        else:
+            self.obs_type = 'mock_observations'
+        self.model_path = '{}/trained_networks/pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
         self.nr_processes = nr_processes
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -92,11 +96,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
-    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, save_all_networks, draw_figs,
+    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figs,
                       loss_dict):
         
         self.training_data_dict = training_data_dict
-        self.save_all_networks = save_all_networks
         
         self.nr_iterations_trained = nr_iterations
         self.std_penalty = std_penalty
@@ -104,7 +107,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         self.draw_figs = draw_figs
         
-        with open('progress.txt', 'w+') as f:
+        os.makedirs(os.path.dirname(self.model_path + 'progress.txt'), exist_ok=True)
+        with open(self.model_path + 'progress.txt', 'w+') as f:
             
             self.inp_queue = mp.Queue()
             self.results_queue = mp.Queue()
@@ -119,11 +123,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                                                                       self.network_args, self.weight_shapes, loss_dict))
                 process_list.append(process)
                 
-            distance_process = mp.Process(target=save_distances, args=(self.print_dist_queue, self.parent.name))
+            distance_process = mp.Process(target=save_distances, args=(self.print_dist_queue, self.model_path))
             process_list.append(distance_process)
             
             if draw_figs:
-                figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.parent.name, 
+                figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.model_path, 
                                                                                self.weight_shapes, self.network_args, 
                                                                                training_data_dict))
                 process_list.append(figure_drawer_process)
@@ -143,8 +147,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.progress = 0
                 
-                self.swarm_best_score_train = 1e20
-                self.swarm_best_score_val = 1e20
+                self.swarm_best_score_train = float('Inf')
+                self.swarm_best_score_val = float('Inf')
                 
                 self.swarm_best_distance_moved_p_point_one = []
                 self.swarm_best_distance_moved_p_one = []
@@ -238,17 +242,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     'swarm_best_distance_moved_p_two': self.swarm_best_distance_moved_p_two,
                     'swarm_best_distance_moved_p_inf': self.swarm_best_distance_moved_p_inf
                 }
-                os.makedirs(os.path.dirname(network_path + self.parent.name + '/swarm_best_distance_moved.p'), exist_ok=True)
-                pickle.dump(distance_dict, open(network_path + self.parent.name + '/swarm_best_distance_moved.p', 'wb'))
+                os.makedirs(os.path.dirname(self.model_path + 'swarm_best_distance_moved.p'), exist_ok=True)
+                pickle.dump(distance_dict, open(self.model_path + 'swarm_best_distance_moved.p', 'wb'))
                 
                 self.swarm_best_pos_train = self.positions[i_particle]
                 self.time_since_train_improvement = 0
                 
-                if self.save_all_networks:
-                    self.inp_queue.put([self.positions[i_particle], i_particle, 
-                                        'save_all {} {:d} training'.format(self.parent.name, iteration)])
-                else:
-                    self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
+                self.inp_queue.put([self.positions[i_particle], i_particle, 
+                                    'save {:d} training {}'.format(iteration, self.model_path)])
                 out = self.results_queue.get(timeout=20)
 
                 if out != 'save_successful':
@@ -274,11 +275,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration])
                     
                     # save the model
-                    if self.save_all_networks:
-                        self.inp_queue.put([self.positions[i_particle], i_particle, 
-                                            'save_all {} {:d} validation'.format(self.parent.name, iteration)])
-                    else:
-                        self.inp_queue.put([self.positions[i_particle], i_particle, 'save {}'.format(self.parent.name)])
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 
+                                        'save {:d} validation {}'.format(iteration, self.model_path)])
                     out = self.results_queue.get(timeout=20)
 
                     if out != 'save_successful':
@@ -442,50 +440,25 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
             weight_mat_list = get_weights(position, weight_shapes)
             model.set_weights(weight_mat_list)
 
-            str_list = string.split(' ')
+            str_list = string.split(' ')            
             
-            data_type = str_list[0]
             if len(str_list) == 1:
-                pass
-            elif len(str_list) == 2:
-                model_name = str_list[1]
-            elif len(str_list) == 3:
-                model_name = str_list[1]
-                iteration = str_list[2]
-            elif len(str_list) == 4:
-                model_name = str_list[1]
-                iteration = str_list[2]
-                mode_of_hs = str_list[3]
-            else:
-                print(string)
-                print(str_list)
-                print('wrong string sent')
-                break
-                
-            if data_type == 'train':
-                score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type, 
-                                       loss_dict=loss_dict)
-                results_queue.put([score, particle_nr])
-            elif data_type == 'val':
-                
+                data_type = str_list[0]
                 score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=data_type,
                                        loss_dict=loss_dict)
-                y_pred = predict_points(model, training_data_dict, original_units=False, data_type=data_type)
-
-                stds = np.std(y_pred, axis=0)
+                if data_type == 'train':
+                    results_queue.put([score, particle_nr])
+                elif data_type == 'val':
+                    y_pred = predict_points(model, training_data_dict, original_units=False, data_type=data_type)
+                    stds = np.std(y_pred, axis=0)
+                    results_queue.put([score, stds])
                 
-                results_queue.put([score, stds])
+            elif len(str_list) == 4:
+                iteration = str_list[1]
+                mode_of_hs = str_list[2]
+                model_path = str_list[3]
                 
-            elif data_type == 'save':
-                
-                model.save(network_path + '{}.h5'.format(model_name))
-                pickle.dump(training_data_dict, open(network_path + '{}_training_data_dict.p'.format(model_name), 'wb'))
-                
-                results_queue.put('save_successful')
-                
-            elif data_type == 'save_all':
-                
-                directory = network_path + '{}/{}_best/'.format(model_name, mode_of_hs)
+                directory = '{}{}_best/'.format(model_path, mode_of_hs)
                 
                 if iteration == '0':
                     os.makedirs(os.path.dirname(directory + 'iter_{}.h5'.format(iteration)), exist_ok=True)
@@ -500,6 +473,12 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 model.save(directory + 'iter_{}.h5'.format(iteration))
                 
                 results_queue.put('save_successful')
+                
+            else:
+                print(string)
+                print(str_list)
+                print('wrong string sent')
+                break
                 
 
 def get_weights(position, weight_shapes): # get the weight list corresponding to the position in parameter space
@@ -536,7 +515,7 @@ def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs,
 
     return score
 
-def save_distances(queue, model_name):
+def save_distances(queue, model_path):
         
     keep_evaluating = True
     
@@ -553,13 +532,13 @@ def save_distances(queue, model_name):
             'p_two': p_two
         }
 
-        file_path = network_path + '{}/interparticle_distances/iter_{:d}.p'.format(model_name, iteration)
+        file_path = '{}interparticle_distances/iter_{:d}.p'.format(model_path, iteration)
 
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         pickle.dump(distance_dict, open(file_path, 'wb'))
 
-def figure_drawer(queue, model_name, weight_shapes, network_args, training_data_dict):
+def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_dict):
     
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args
@@ -575,7 +554,7 @@ def figure_drawer(queue, model_name, weight_shapes, network_args, training_data_
         model.set_weights(weight_mat_list)
         
         title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
-        fig_file_path = network_path + '{}/figures_validation_weights/val_data/all_losses/iter_{}.png'.format(model_name, iteration)
+        fig_file_path = '{}figures_validation_weights/val_data/all_losses/iter_{}.png'.format(model_path, iteration)
         get_smf_ssfr_fq_plot(model, training_data_dict, title=title, data_type='val', full_range=True, save=True, 
                              file_path=fig_file_path, running_from_script=True)
         

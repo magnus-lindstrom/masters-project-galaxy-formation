@@ -207,127 +207,125 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         training_data_dict['train_weights'] = train_weights
         training_data_dict['val_weights'] = val_weights
         training_data_dict['test_weights'] = test_weights
-        
-    else:
-                
-        # store the relevant SSFR data
-        ssfr_directory = '/home/magnus/data/mock_data/ssfr/'
-        ssfr_data = {}
-        for redshift in training_data_dict['unique_redshifts']:
-            
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(ssfr_directory + file_name + '.json', 'r') as f:
-                ssfr = json.load(f)
-            
-            parameter_dict = ssfr.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-            
-            bin_centers = [item[0] for item in ssfr]
-            mean_ssfr = [item[1] for item in ssfr]
-            errors = [item[2] for item in ssfr]
-            
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'ssfr': np.array(mean_ssfr),
-                'errors': np.array(errors)
-            }
-                
-            ssfr_data['{:.1f}'.format(redshift)] = redshift_data
-            
-        training_data_dict['ssfr_data'] = ssfr_data
-        
-        # store the relevant SMF data
-        smf_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
-        smf_data = {}
-        
-        for redshift in training_data_dict['unique_redshifts']:
-            
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(smf_directory + file_name + '.json', 'r') as f:
-                smf_list = json.load(f)
-                
-            parameter_dict = smf_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-            
-            bin_centers = [item[0] for item in smf_list]
-            smf = [item[1] for item in smf_list]
-            errors = [item[2] for item in smf_list]
-            
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'smf': np.array(smf),
-                'errors': np.array(errors)
-            }
-            
-            smf_data['{:.1f}'.format(redshift)] = redshift_data
-            
-        training_data_dict['smf_data'] = smf_data
-        
-        # store the relevant FQ data
-        fq_directory = '/home/magnus/data/mock_data/fq/'
-        fq_data = {}
-        
-        for redshift in training_data_dict['unique_redshifts']:
-            
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(fq_directory + file_name + '.json', 'r') as f:
-                fq_list = json.load(f)
-                
-            parameter_dict = fq_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-            
-            bin_centers = [item[0] for item in fq_list]
-            fq = [item[1] for item in fq_list]
-            errors = [item[2] for item in fq_list]
-            
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'fq': np.array(fq),
-                'errors': np.array(errors)
-            }
-            
-            fq_data['{:.1f}'.format(redshift)] = redshift_data
-            
-        training_data_dict['fq_data'] = fq_data
-        
-        # store the relevant SHM data
-        shm_directory = '/home/magnus/data/mock_data/stellar_halo_mass_relations/'
-        shm_data = {}
-        
-        for redshift in training_data_dict['unique_redshifts']:
-            
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(shm_directory + file_name + '.json', 'r') as f:
-                shm_list = json.load(f)
-                
-            parameter_dict = shm_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-            
-            bin_centers = [item[0] for item in shm_list]
-            shm = [item[1] for item in shm_list]
-            errors = [item[2] for item in shm_list]
-            
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'shm': np.array(shm),
-                'errors': np.array(errors)
-            }
-            
-            shm_data['{:.1f}'.format(redshift)] = redshift_data
-            
-        training_data_dict['shm_data'] = shm_data
+                        
+    # store the relevant SSFR data
+    ssfr_directory = '/home/magnus/data/mock_data/ssfr/'
+    ssfr_data = {}
+    for redshift in training_data_dict['unique_redshifts']:
+
+        file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+        with open(ssfr_directory + file_name + '.json', 'r') as f:
+            ssfr = json.load(f)
+
+        parameter_dict = ssfr.pop(0)
+        bin_widths = parameter_dict['bin_widths']
+        bin_edges = parameter_dict['bin_edges']
+
+        bin_centers = [item[0] for item in ssfr]
+        mean_ssfr = [item[1] for item in ssfr]
+        errors = [item[2] for item in ssfr]
+
+        redshift_data = {
+            'bin_centers': np.array(bin_centers),
+            'bin_widths': np.array(bin_widths),
+            'bin_edges': np.array(bin_edges),
+            'ssfr': np.array(mean_ssfr),
+            'errors': np.array(errors)
+        }
+
+        ssfr_data['{:.1f}'.format(redshift)] = redshift_data
+
+    training_data_dict['ssfr_data'] = ssfr_data
+
+    # store the relevant SMF data
+    smf_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
+    smf_data = {}
+
+    for redshift in training_data_dict['unique_redshifts']:
+
+        file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+        with open(smf_directory + file_name + '.json', 'r') as f:
+            smf_list = json.load(f)
+
+        parameter_dict = smf_list.pop(0)
+        bin_widths = parameter_dict['bin_widths']
+        bin_edges = parameter_dict['bin_edges']
+
+        bin_centers = [item[0] for item in smf_list]
+        smf = [item[1] for item in smf_list]
+        errors = [item[2] for item in smf_list]
+
+        redshift_data = {
+            'bin_centers': np.array(bin_centers),
+            'bin_widths': np.array(bin_widths),
+            'bin_edges': np.array(bin_edges),
+            'smf': np.array(smf),
+            'errors': np.array(errors)
+        }
+
+        smf_data['{:.1f}'.format(redshift)] = redshift_data
+
+    training_data_dict['smf_data'] = smf_data
+
+    # store the relevant FQ data
+    fq_directory = '/home/magnus/data/mock_data/fq/'
+    fq_data = {}
+
+    for redshift in training_data_dict['unique_redshifts']:
+
+        file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+        with open(fq_directory + file_name + '.json', 'r') as f:
+            fq_list = json.load(f)
+
+        parameter_dict = fq_list.pop(0)
+        bin_widths = parameter_dict['bin_widths']
+        bin_edges = parameter_dict['bin_edges']
+
+        bin_centers = [item[0] for item in fq_list]
+        fq = [item[1] for item in fq_list]
+        errors = [item[2] for item in fq_list]
+
+        redshift_data = {
+            'bin_centers': np.array(bin_centers),
+            'bin_widths': np.array(bin_widths),
+            'bin_edges': np.array(bin_edges),
+            'fq': np.array(fq),
+            'errors': np.array(errors)
+        }
+
+        fq_data['{:.1f}'.format(redshift)] = redshift_data
+
+    training_data_dict['fq_data'] = fq_data
+
+    # store the relevant SHM data
+    shm_directory = '/home/magnus/data/mock_data/stellar_halo_mass_relations/'
+    shm_data = {}
+
+    for redshift in training_data_dict['unique_redshifts']:
+
+        file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+        with open(shm_directory + file_name + '.json', 'r') as f:
+            shm_list = json.load(f)
+
+        parameter_dict = shm_list.pop(0)
+        bin_widths = parameter_dict['bin_widths']
+        bin_edges = parameter_dict['bin_edges']
+
+        bin_centers = [item[0] for item in shm_list]
+        shm = [item[1] for item in shm_list]
+        errors = [item[2] for item in shm_list]
+
+        redshift_data = {
+            'bin_centers': np.array(bin_centers),
+            'bin_widths': np.array(bin_widths),
+            'bin_edges': np.array(bin_edges),
+            'shm': np.array(shm),
+            'errors': np.array(errors)
+        }
+
+        shm_data['{:.1f}'.format(redshift)] = redshift_data
+
+    training_data_dict['shm_data'] = shm_data
     
     return training_data_dict
 
@@ -515,7 +513,8 @@ def predict_points(model, training_data_dict, original_units=True, as_lists=Fals
         
 #     if len(training_data_dict['output_features']) == 1:
         
-    if original_units:
+    if original_units and 'conv_values_output' in training_data_dict:
+        print('hej')
         predicted_points = convert_units(predicted_norm_points, training_data_dict['norm']['output'], 
                                          back_to_original=True, conv_values=training_data_dict['conv_values_output'])
     else:
@@ -828,7 +827,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             scale_factor = 1 / (1 + redshift)
 
             h_0 = 67.81 / (3.09e19) # 1/s
-            h_0 = h_0 * 60 * 24 * 365 # 1/yr
+            h_0 = h_0 * 60 * 60 * 24 * 365 # 1/yr
             h_r = h_0 * np.sqrt(1e-3*scale_factor**(-4) + 0.308*scale_factor**(-3) + 0*scale_factor**(-2) + 0.692)
             ssfr_cutoff = 0.3*h_r
             log_ssfr_cutoff = np.log10(ssfr_cutoff)
@@ -842,10 +841,6 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
                     fq = float('nan')
 
                 pred_bin_feat_dist[bin_num-1] = fq
-
-            ### TODO: check if the following line makes sense. Do we ever have zeros? Not just NaNs?
-            zero_indeces = [True if (frac == 0) else False for frac in pred_bin_feat_dist]
-            pred_bin_feat_dist[zero_indeces] = 1e-5
 
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist))
             
@@ -962,7 +957,7 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
             scale_factor = 1 / (1 + redshift)
 
             h_0 = 67.81 / (3.09e19) # 1/s
-            h_0 = h_0 * 60 * 24 * 365 # 1/yr
+            h_0 = h_0 * 60 * 60 * 24 * 365 # 1/yr
             h_r = h_0 * np.sqrt(1e-3*scale_factor**(-4) + 0.308*scale_factor**(-3) + 0*scale_factor**(-2) + 0.692)
             ssfr_cutoff = 0.3*h_r
             log_ssfr_cutoff = np.log10(ssfr_cutoff)
@@ -977,15 +972,9 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
 
                 pred_bin_feat_dist_redshift[bin_num-1] = fq
 
-            ### TODO: check if the following line makes sense. Do we ever have zeros? Not just NaNs?
-            zero_indeces = [True if (frac == 0) else False for frac in pred_bin_feat_dist_redshift]
-            pred_bin_feat_dist_redshift[zero_indeces] = 1e-5
-
-            non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist_redshift))
             
         else:    
             pred_bin_feat_dist_redshift = bin_means
-            non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist_redshift))
 
         pred_bin_feat_dist.append(pred_bin_feat_dist_redshift.copy())
         true_bin_feat_dist.append(true_bin_feat_dist_redshift.copy())
@@ -1044,35 +1033,39 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
 
         ############### mean SSFR ###############
 
-        loss_ssfr, dist_outside = \
-            binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'ssfr', data_type, loss_dict)
-        loss += loss_dict['ssfr_weight'] * loss_ssfr
-        dist_outside_tot += dist_outside
+        if loss_dict['ssfr_weight'] > 0:
+            loss_ssfr, dist_outside = \
+                binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'ssfr', data_type, loss_dict)
+            loss += loss_dict['ssfr_weight'] * loss_ssfr
+            dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_ssfr
 
         ############### SMF ###############  
         
-        loss_smf, dist_outside = \
-            binned_loss(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, loss_dict)
-        loss += loss_dict['smf_weight'] * loss_smf
-        dist_outside_tot += dist_outside
+        if loss_dict['smf_weight'] > 0:
+            loss_smf, dist_outside = \
+                binned_loss(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, loss_dict)
+            loss += loss_dict['smf_weight'] * loss_smf
+            dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_smf
 
         ############### FQ ###############
 
-        loss_fq, dist_outside = \
-            binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict)
-        loss += loss_dict['fq_weight'] * loss_fq
-        dist_outside_tot += dist_outside
+        if loss_dict['fq_weight'] > 0:
+            loss_fq, dist_outside = \
+                binned_loss(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict)
+            loss += loss_dict['fq_weight'] * loss_fq
+            dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_fq
 
         ############### SHM ###############
 
-        loss_shm, dist_outside = \
-            binned_loss(training_data_dict, training_data_dict['original_halo_masses_{}'.format(data_type)], 
-                                                               predicted_stellar_mass_log, 'shm', data_type, loss_dict)
-        loss += loss_dict['shm_weight'] * loss_shm
-        dist_outside_tot += dist_outside
+        if loss_dict['shm_weight'] > 0:
+            loss_shm, dist_outside = \
+                binned_loss(training_data_dict, training_data_dict['original_halo_masses_{}'.format(data_type)], 
+                                                                   predicted_stellar_mass_log, 'shm', data_type, loss_dict)
+            loss += loss_dict['shm_weight'] * loss_shm
+            dist_outside_tot += dist_outside
 #         nr_empty_bins =+ nr_empty_bins_fq
 
         loss /= loss_dict['ssfr_weight'] + loss_dict['smf_weight'] + loss_dict['fq_weight'] + loss_dict['shm_weight']
@@ -1088,7 +1081,7 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, data_type='train',
     
     else:
         
-        y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
+        y_pred = predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
         
         sfr_index = training_data_dict['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')

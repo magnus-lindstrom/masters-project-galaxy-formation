@@ -1169,7 +1169,7 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
         plt.xlabel(x_labels[i], fontsize=15)
         plt.ylabel(y_labels[i], fontsize=15)
 
-        if i == 2:
+        if i in [2, 3]:
             location = 'upper left'
         else:
             location = 'upper right'
