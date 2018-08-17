@@ -15,13 +15,13 @@ np.random.seed(999)
 random.seed(999)
 
 ### General parameters
-total_set_size = 2.9e4 # how many examples will be used for training+validation+testing
-train_size = 1.5e4
-val_size = 1e4
-test_size = .4e4
-input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
+tot_nr_points = 5e4 # how many examples will be used for training+validation+testing
+train_frac = 0.8
+val_frac = 0.1
+test_frac = 0.1
+input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate', 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
-redshifts = [0]#,.1,.2,.5,1,2,3,4,6,8]
+redshifts = [0,.1,.2,.5,1]#,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
 
 reinforcement_learning = True
@@ -29,7 +29,7 @@ real_observations = False
 
 verbatim = True
 
-use_config_name = True
+use_config_name = False
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
@@ -48,7 +48,7 @@ loss_dict = {
     'fq_weight': 1,
     'ssfr_weight': 1,
     'smf_weight': 1,
-    'shm_weight': 1,
+    'shm_weight': 3,
     'dist_outside_punish': 'exp',
     'dist_outside_factor': 10,
     'min_filled_bin_frac': 0
@@ -57,7 +57,7 @@ loss_dict = {
 ### PSO parameters
 nr_processes = 30
 nr_iterations = 2000
-min_std_tol = 0.01                # minimum allowed std for any parameter
+min_std_tol = 0.01 # minimum allowed std for any parameter
 pso_param_dict = {
     'nr_particles': 3 * nr_processes,
     'inertia_weight_start': 1.4,
@@ -65,17 +65,17 @@ pso_param_dict = {
     'exploration_iters': 1500,
     'patience': 10000,
     'patience_parameter': 'train',
-    'restart_check_interval': 200
+    'restart_check_interval': 10
 }
 
 if use_config_name:
     redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
     weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
                               str(loss_dict['shm_weight'])])
-    network_name = '{:d}x{:d}_{:.1e}points_redshifts{}_{}_{}{}_loss_minFilledBinFrac{:03.0f}_fq-ssfr-smf-shm_weights_{}'.format(
-        nr_hidden_layers, nr_neurons_per_layer, total_set_size, redshift_string, activation_function, 
-        loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], 100 * loss_dict['min_filled_bin_frac'],
-        weight_string
+    network_name = '{:d}x{:d}_{:.1e}points_redshifts{}_{}_{}{}_loss_{}_minFilledBinFrac{:03.0f}_fq-ssfr-smf-shm_weights_{}'.format(
+        nr_hidden_layers, nr_neurons_per_layer, tot_nr_points, redshift_string, activation_function, 
+        loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], '-'.join(input_features), 
+        100 * loss_dict['min_filled_bin_frac'], weight_string
     )
 else:
     network_name = 'testing'
@@ -87,8 +87,8 @@ galaxies, data_keys = load_galfiles(redshifts=redshifts, equal_numbers=same_n_po
     
 # prepare the training data
 training_data_dict = divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, 
-                                       total_set_size=int(total_set_size), train_size=int(train_size), val_size=int(val_size), 
-                                       test_size=int(test_size), pso=True)
+                                       total_set_size=int(tot_nr_points), train_frac=train_frac, val_frac=val_frac, 
+                                       test_frac=test_frac, pso=True)
 training_data_dict = normalise_data(training_data_dict, norm, pso=True)
 
 

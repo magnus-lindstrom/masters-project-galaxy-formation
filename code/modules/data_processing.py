@@ -132,23 +132,31 @@ def get_unit_dict():
     return unit_dict
 
 def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
-                      total_set_size=0, train_size=0, val_size=0,
-                      test_size=0, k_fold_cv=False, tot_cv_folds=0, cv_fold_nr=0, pso=False, use_emerge_targets=False):
+                      total_set_size=0, train_frac=0, val_frac=0, test_frac=0, pso=False, use_emerge_targets=False):
     
     n_data_points = galaxies.shape[0]
     
-    if k_fold_cv:
-        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
-        fold_size = int(total_set_size / tot_cv_folds)
-        val_indices = subset_indices[cv_fold_nr*fold_size : (cv_fold_nr+1)*fold_size]
-        train_indices = np.concatenate((subset_indices[:cv_fold_nr*fold_size], subset_indices[(cv_fold_nr+1)*fold_size:]))
-        test_indices = [0]
+#     if k_fold_cv:
+#         subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
+#         fold_size = int(total_set_size / tot_cv_folds)
+#         val_indices = subset_indices[cv_fold_nr*fold_size : (cv_fold_nr+1)*fold_size]
+#         train_indices = np.concatenate((subset_indices[:cv_fold_nr*fold_size], subset_indices[(cv_fold_nr+1)*fold_size:]))
+#         test_indices = [0]
         
+#     else:
+
+    if total_set_size == 'all':
+        total_set_size = n_data_points
     else:
-        subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
-        train_indices = subset_indices[: int(train_size)]
-        val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
-        test_indices = subset_indices[int(train_size+val_size) :]
+        total_set_size = int(total_set_size)
+    train_size = int(train_frac * total_set_size)
+    val_size = int(val_frac * total_set_size)
+    test_size = int(test_frac * total_set_size)
+    
+    subset_indices = np.random.choice(n_data_points, total_set_size, replace=False)
+    train_indices = subset_indices[: int(train_size)]
+    val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
+    test_indices = subset_indices[int(train_size+val_size) :]
 
     x_train = np.zeros((len(train_indices), len(input_features)))
     x_val = np.zeros((len(val_indices), len(input_features)))
@@ -166,9 +174,21 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
     data_redshifts['test_data'] = galaxies[test_indices, data_keys['Redshift']]
     
     original_nr_data_points_by_redshift = []
+    train_frac_of_tot_by_redshift = []
+    val_frac_of_tot_by_redshift = []
+    test_frac_of_tot_by_redshift = []
     
     for redshift in redshifts:
         original_nr_data_points_by_redshift.append(np.sum(galaxies[:, data_keys['Redshift']] == redshift))
+        train_frac_of_tot_by_redshift.append(
+            np.sum(galaxies[train_indices, data_keys['Redshift']] == redshift) / original_nr_data_points_by_redshift[-1]
+        )
+        val_frac_of_tot_by_redshift.append(
+            np.sum(galaxies[val_indices, data_keys['Redshift']] == redshift) / original_nr_data_points_by_redshift[-1]
+        )
+        test_frac_of_tot_by_redshift.append(
+            np.sum(galaxies[test_indices, data_keys['Redshift']] == redshift) / original_nr_data_points_by_redshift[-1]
+        )
     
     training_data_dict = {
         'output_features': output_features,
@@ -183,6 +203,9 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'original_halo_masses_val': galaxies[val_indices, data_keys['Halo_mass']],
         'original_halo_masses_test': galaxies[test_indices, data_keys['Halo_mass']],
         'original_nr_data_points_by_redshift': original_nr_data_points_by_redshift,
+        'train_frac_of_tot_by_redshift': train_frac_of_tot_by_redshift,
+        'val_frac_of_tot_by_redshift': val_frac_of_tot_by_redshift,
+        'test_frac_of_tot_by_redshift': test_frac_of_tot_by_redshift,
         'unique_redshifts': redshifts,
         'data_redshifts': data_redshifts
     }
@@ -451,12 +474,16 @@ def normalise_data(training_data_dict, norm, pso=False):
         output_test_dict = {}
 
         # convert units based on the train data only
-        y_train_norm, conv_values_output = convert_units(y_train, norm['output'])  
-        y_val_norm = convert_units(y_val, norm['output'], conv_values=conv_values_output)
-        y_test_norm = convert_units(y_test, norm['output'], conv_values=conv_values_output)
+        if norm['output'] != 'none':
+            y_train_norm, conv_values_output = convert_units(y_train, norm['output'])
+            y_val_norm = convert_units(y_val, norm['output'], conv_values=conv_values_output)
+            y_test_norm = convert_units(y_test, norm['output'], conv_values=conv_values_output)
+            training_data_dict['conv_values_output'] = conv_values_output
+        else:
+            y_train_norm = y_train
+            y_val_norm = y_val
+            y_test_norm = y_test
         
-        training_data_dict['conv_values_output'] = conv_values_output
-    
         if pso:
 
             training_data_dict['y_train'] = y_train_norm
@@ -776,6 +803,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
     dist_outside = 0
 #     nr_empty_bins = np.zeros(len(training_data_dict['unique_redshifts']))
     tot_nr_points = 0
+    frac_outside = np.zeros(len(training_data_dict['unique_redshifts']))
 
     for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
 
@@ -783,12 +811,13 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
 
         bin_edges = training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges']
 
-#         nr_points_outside_binning_feat_range = \
-#             np.sum(binning_feat[relevant_inds] < 
-#                   training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][0]) \
-#           + np.sum(binning_feat[relevant_inds] > 
-#                   training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][-1])
-        tot_nr_points += len(binning_feat[relevant_inds])
+        nr_points_outside_binning_feat_range = \
+            np.sum(binning_feat[relevant_inds] < 
+                  training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][0]) \
+          + np.sum(binning_feat[relevant_inds] > 
+                  training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][-1])
+        nr_points_redshift = len(binning_feat[relevant_inds])
+        tot_nr_points += nr_points_redshift
 
         # sum up distances outside the accepted range
         inds_below = binning_feat[relevant_inds] < \
@@ -816,8 +845,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             pred_bin_feat_dist = bin_counts / 200**3 / bin_widths
             
             # since we're only using a subset of the original data points, compensate for this
-            pred_bin_feat_dist *= training_data_dict['original_nr_data_points_by_redshift'][i_red] \
-                                / len(training_data_dict['{}_indices'.format(data_type)])
+            pred_bin_feat_dist /= training_data_dict['{}_frac_of_tot_by_redshift'.format(data_type)][i_red]
             
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist))
             pred_bin_feat_dist[non_nan_indeces] = np.log10(pred_bin_feat_dist[non_nan_indeces])
@@ -835,8 +863,9 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             pred_bin_feat_dist = np.zeros(n_bins)
             for bin_num in range(1, n_bins+1):
 
-                if len(bin_feat[bin_numbers == bin_num]) != 0:
-                    fq = np.sum(bin_feat[bin_numbers == bin_num] < log_ssfr_cutoff) / len(bin_feat[bin_numbers == bin_num])
+                if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
+                    fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
+                        / len(bin_feat[relevant_inds][bin_numbers == bin_num])
                 else:
                     fq = float('nan')
 
@@ -849,12 +878,15 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist))
 
 #         nr_empty_bins[i_red] = np.sum(np.invert(non_nan_indeces))
+        frac_outside[i_red] = nr_points_outside_binning_feat_range / nr_points_redshift
 
-        if (np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins > loss_dict['min_filled_bin_frac']) \
-            or bin_feat_name == 'shm':
+        if (np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins > loss_dict['min_filled_bin_frac']):
         
             loss += np.sum(np.power(true_bin_feat_dist[non_nan_indeces] - pred_bin_feat_dist[non_nan_indeces], 2) \
                             / errors[non_nan_indeces]) / n_bins
+#             if bin_feat_name == 'shm':
+#                 print('true_bin_feat_dist[non_nan_indeces]: ', true_bin_feat_dist[non_nan_indeces])
+#                 print('pred_bin_feat_dist[non_nan_indeces]: ', pred_bin_feat_dist[non_nan_indeces])
         elif np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins < loss_dict['min_filled_bin_frac']:
             loss += (np.sum(np.power(true_bin_feat_dist[non_nan_indeces] - pred_bin_feat_dist[non_nan_indeces], 2) \
                             / errors[non_nan_indeces]) / n_bins) + np.sum(np.invert(non_nan_indeces))
@@ -896,6 +928,8 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
     obs_bin_centers = []
 
     acceptable_binning_feat_intervals = []
+    
+    frac_outside = np.zeros(len(training_data_dict['unique_redshifts']))
 
     for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
 
@@ -929,7 +963,7 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
 
         else:
             bin_edges = training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges']
-
+            
         true_bin_feat_dist_redshift = training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)][bin_feat_name]
 
         n_bins = len(bin_edges)-1
@@ -946,8 +980,7 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
             pred_bin_feat_dist_redshift = bin_counts / 200**3 / bin_widths
             
             # since we're only using a subset of the original data points, compensate for this
-            pred_bin_feat_dist_redshift *= training_data_dict['original_nr_data_points_by_redshift'][i_red] \
-                                / len(training_data_dict['{}_indices'.format(data_type)])
+            pred_bin_feat_dist_redshift /= training_data_dict['{}_frac_of_tot_by_redshift'.format(data_type)][i_red]
             
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist_redshift))
             pred_bin_feat_dist_redshift[non_nan_indeces] = np.log10(pred_bin_feat_dist_redshift[non_nan_indeces])
@@ -965,8 +998,9 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
             pred_bin_feat_dist_redshift = np.zeros(n_bins)
             for bin_num in range(1, n_bins+1):
 
-                if len(bin_feat[bin_numbers == bin_num]) != 0:
-                    fq = np.sum(bin_feat[bin_numbers == bin_num] < log_ssfr_cutoff) / len(bin_feat[bin_numbers == bin_num])
+                if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
+                    fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
+                        / len(bin_feat[relevant_inds][bin_numbers == bin_num])
                 else:
                     fq = float('nan')
 
@@ -985,11 +1019,20 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
             [training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][0], 
             training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][-1]]
         )
+        
+        nr_points_outside_binning_feat_range = \
+            np.sum(binning_feat[relevant_inds] < 
+                  training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][0]) \
+          + np.sum(binning_feat[relevant_inds] > 
+                  training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][-1])
+        nr_points_redshift = len(binning_feat[relevant_inds])
+        frac_outside[i_red] = nr_points_outside_binning_feat_range / nr_points_redshift
 
-    return [pred_bin_feat_dist, true_bin_feat_dist, pred_bin_centers, obs_bin_centers, redshifts, acceptable_binning_feat_intervals]
+    return [pred_bin_feat_dist, true_bin_feat_dist, pred_bin_centers, obs_bin_centers, redshifts, acceptable_binning_feat_intervals,
+            frac_outside]
 
 
-def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, data_type='train'):
+def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, data_type='train', batch_size='all_points'):
     
     np.seterr(over='raise', divide='raise')
     
@@ -998,8 +1041,10 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
     
     else:
         
+#         if batch_size == 'all_points':
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
-        
+#         else
+            
         sfr_index = training_data_dict['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
 
@@ -1120,32 +1165,37 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, data_type='train',
       
         ############### mean SSFR ###############
 
-        pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, obs_mass_interval_ssfr = \
+        (pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, obs_mass_interval_ssfr, 
+        frac_outside_ssfr) = \
             binned_dist_func(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'ssfr', data_type, full_range)
 
      
         ############### SMF ###############  
 
-        pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf, obs_mass_interval_smf = \
+        pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf, obs_mass_interval_smf, frac_outside_smf = \
             binned_dist_func(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, 
                              full_range)
 
         ############### FQ ###############
 
-        pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq = \
+        pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq, frac_outside_fq = \
             binned_dist_func(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, full_range)
         
         ############### SHM ###############
 
-        pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm = \
+        pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm, frac_outside_shm = \
             binned_dist_func(training_data_dict, training_data_dict['original_halo_masses_{}'.format(data_type)], 
                              predicted_stellar_mass_log, 'shm', data_type, full_range)      
         
         return {
-            'ssfr': [pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, obs_mass_interval_ssfr],
-            'smf': [pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf, obs_mass_interval_smf],
-            'fq': [pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq],
-            'shm': [pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm]
+            'ssfr': [pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts_ssfr, obs_mass_interval_ssfr, 
+                     frac_outside_ssfr],
+            'smf': [pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts_smf, obs_mass_interval_smf, 
+                     frac_outside_smf],
+            'fq': [pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts_fq, obs_mass_interval_fq, 
+                     frac_outside_fq],
+            'shm': [pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm, 
+                     frac_outside_shm]
 #             'predicted_stellar_masses_redshift': predicted_stellar_masses_redshift,
 #             'nr_empty_bins_redshift': nr_empty_bins_redshift,
 #             'fraction_of_points_outside_redshift': frac_outside_redshift,

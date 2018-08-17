@@ -873,8 +873,9 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
                 x_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
             
         # rescale data
-        x_data = convert_units(x_data, training_data_dict['norm']['output'], back_to_original=True, 
-                               conv_values=training_data_dict['conv_values_output'])
+        if training_data_dict['norm']['output'] != 'none':
+            x_data = convert_units(x_data, training_data_dict['norm']['output'], back_to_original=True, 
+                                   conv_values=training_data_dict['conv_values_output'])
         x_data = x_data[:n_points, x_feat_index]
             
     elif x_axis_feature in training_data_dict['input_features']:
@@ -904,8 +905,9 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
                                       len(training_data_dict['output_features'])))
         for i_feat, output_feat in enumerate(training_data_dict['output_features']):
             true_y_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
-        true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
-                                    back_to_original=True, conv_values=training_data_dict['conv_values_output'])
+        if training_data_dict['norm']['output'] != 'none':
+            true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 
+                                        back_to_original=True, conv_values=training_data_dict['conv_values_output'])
         true_y_data = true_y_data[:n_points, y_feat_index]
 
     y_label = 'log($[{}])$'.format(unit_dict[y_axis_feature])
@@ -1133,19 +1135,25 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
     
     redshift_index = training_data_dict['unique_redshifts'].index(redshift)
     
-    pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts, obs_mass_interval_ssfr = function_dict['ssfr']
-    pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts, obs_mass_interval_smf = function_dict['smf']
-    pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts, obs_mass_interval_fq = function_dict['fq']
-    pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm = function_dict['shm']
+    (pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, redshifts, obs_mass_interval_ssfr, 
+        frac_outside_ssfr) = function_dict['ssfr']
+    (pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, redshifts, obs_mass_interval_smf, 
+        frac_outside_smf) = function_dict['smf']
+    (pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, redshifts, obs_mass_interval_fq, 
+        frac_outside_fq) = function_dict['fq']
+    (pred_shm, true_shm, pred_bin_centers_shm, obs_bin_centers_shm, redshifts_shm, obs_mass_interval_shm, 
+        frac_outside_shm) = function_dict['shm']
 #     predicted_stellar_masses_redshift = function_dict['predicted_stellar_masses_redshift']
 #     nr_empty_bins_redshift = function_dict['nr_empty_bins_redshift']
 #     frac_outside_redshift = function_dict['fraction_of_points_outside_redshift']
 #     acceptable_interval_redshift = function_dict['acceptable_interval_redshift']
     
+    plot_names = ['ssfr', 'smf', 'fq', 'shm']
     pred_data = [pred_ssfr, pred_smf, pred_fq, pred_shm]
     true_data = [true_ssfr, true_smf, true_fq, true_shm]
     pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq, pred_bin_centers_shm]
     obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq, obs_bin_centers_shm]
+    fracs_outside = [frac_outside_ssfr, frac_outside_smf, frac_outside_fq, frac_outside_shm]
     
     x_labels = [
         'log($[{}])$'.format(unit_dict['Stellar_mass']),
@@ -1168,11 +1176,18 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
         plt.plot(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], 'b-')
         plt.xlabel(x_labels[i], fontsize=15)
         plt.ylabel(y_labels[i], fontsize=15)
-
+        
         if i in [2, 3]:
             location = 'upper left'
+#             ax.text(.15, .75, 'z = {:2.1f}\n{:.1f}% outside interval'.format(redshift, fracs_outside[i][redshift_index]), 
+#                     fontsize=20, transform = ax.transAxes, horizontalalignment='center')
         else:
             location = 'upper right'
+#             ax.text(.85, .75, 'z = {:2.1f}\n{:.1f}% outside interval'.format(redshift, fracs_outside[i][redshift_index]), 
+#                     fontsize=20, transform = ax.transAxes, horizontalalignment='center')
+            
+        ax.set_title('z = {:2.1f}, {:.2e} outside interval'.format(redshift, fracs_outside[i][redshift_index]), 
+                     fontsize=20)
             
         plt.legend(['DNN', 'Emerge'], loc=location, fontsize='xx-large')
 

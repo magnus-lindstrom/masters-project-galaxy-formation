@@ -34,10 +34,10 @@ class Feed_Forward_Neural_Network():
                                    pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
-                  draw_figures=True, loss_dict=None):
+                  draw_figures=True, loss_dict=None, start_from_pretrained_net=False, pretrained_weights=None):
         
-        self.pso_swarm.train_network(nr_iterations, training_data_dict,
-                                     std_penalty, speed_check, verbatim, draw_figures, loss_dict)
+        self.pso_swarm.train_network(nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figures, 
+                                     loss_dict, start_from_pretrained_net, pretrained_weights)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
@@ -97,7 +97,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
     def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figs,
-                      loss_dict):
+                      loss_dict, start_from_pretrained_net, pretrained_weights):
         
         self.training_data_dict = training_data_dict
         
@@ -259,11 +259,12 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 # see if the result is also the highest val result so far
                 self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
                 val_score, stds = self.results_queue.get(timeout=100)
-                self.best_val_stds = stds
                 
                 is_swarm_best_val = val_score < self.swarm_best_score_val
                 
                 if is_swarm_best_val:
+                    
+                    self.best_val_stds = stds
                     
                     self.swarm_best_pos_val = self.positions[i_particle]
                     self.validation_score_history.append(val_score)
@@ -310,6 +311,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         if (int(iteration/self.pso_param_dict['restart_check_interval']) == iteration/self.pso_param_dict['restart_check_interval']) \
             and (iteration > 0):
             
+            print('checking if should restart. stds: ', self.best_val_stds)
             should_start_fresh = np.any(self.best_val_stds < self.pso_param_dict['min_std_tol'])
             if should_start_fresh:
                 if self.verbatim:
@@ -365,7 +367,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('Average speed of the particles after normalization is: %.2f' % (avg_speed_after))
             f.flush()
     
-    def initialise_positions_velocities(self):
+    def initialise_positions_velocities(self, start_from_pretrained_net, pretrained_weights):
                     
         self.positions = []
         self.velocities = []
@@ -389,8 +391,12 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             self.particle_train_best_scores.append(starting_score)
             self.particle_train_best_pos.append(position)
             
-        self.swarm_best_pos_train = self.positions[0]
-        self.swarm_best_pos_val = self.positions[0]
+        if start_from_pretrained_weights:
+            self.swarm_best_pos_train = 
+            self.swarm_best_pos_val = 
+        else:
+            self.swarm_best_pos_train = self.positions[0]
+            self.swarm_best_pos_val = self.positions[0]
    
     def update_particle(self, i_particle):
 
@@ -553,10 +559,14 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
         weight_mat_list = get_weights(position, weight_shapes)
         model.set_weights(weight_mat_list)
         
-        title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
-        fig_file_path = '{}figures_validation_weights/val_data/all_losses/iter_{}.png'.format(model_path, iteration)
-        get_smf_ssfr_fq_plot(model, training_data_dict, title=title, data_type='val', full_range=True, save=True, 
-                             file_path=fig_file_path, running_from_script=True)
+        for redshift in training_data_dict['unique_redshifts']:
+        
+            title = 'Redshift {:.1f}, iteration {}, best validation weights, validation data points shown'.format(redshift, iteration)
+            fig_file_path = '{}figures_validation_weights/val_data/all_losses/Z{:02.0f}/iteration_{}.png'.format(
+                model_path, redshift*10, iteration
+            )
+            get_smf_ssfr_fq_plot(model, training_data_dict, redshift=redshift, title=title, data_type='val', full_range=True, 
+                                 save=True, file_path=fig_file_path, running_from_script=True)
         
 
         
