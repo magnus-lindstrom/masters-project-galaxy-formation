@@ -2,6 +2,7 @@ import os
 from os.path import expanduser
 home_dir = expanduser("~")
 module_path = home_dir + '/code/modules/'
+backprop_nets_dir = home_dir + '/trained_networks/backprop_trained/'
 import sys
 sys.path.append(module_path)
 import random
@@ -19,7 +20,7 @@ tot_nr_points = 5e4 # how many examples will be used for training+validation+tes
 train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
-input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate', 'Redshift']
+input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
 redshifts = [0,.1,.2,.5,1]#,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
@@ -29,7 +30,9 @@ real_observations = False
 
 verbatim = True
 
-use_config_name = False
+test = True
+use_pretrained_network = True
+pretrained_network_name = '6x6_all-points_redshifts00_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate_to_Stellar_mass-SFR_test_score5.48e-04'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
@@ -55,7 +58,7 @@ loss_dict = {
 }
 
 ### PSO parameters
-nr_processes = 30
+nr_processes = 3
 nr_iterations = 2000
 min_std_tol = 0.01 # minimum allowed std for any parameter
 pso_param_dict = {
@@ -63,12 +66,18 @@ pso_param_dict = {
     'inertia_weight_start': 1.4,
     'inertia_weight_min': 0.3,
     'exploration_iters': 1500,
-    'patience': 10000,
+    'patience': 100,
     'patience_parameter': 'train',
     'restart_check_interval': 10
 }
+if use_pretrained_network:
+    pso_param_dict['inertia_weight_start'] = 1
 
-if use_config_name:
+if test:
+    network_name = 'testing'
+elif use_pretrained_network:
+    network_name = pretrained_network_name
+else:
     redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
     weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
                               str(loss_dict['shm_weight'])])
@@ -77,26 +86,37 @@ if use_config_name:
         loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], '-'.join(input_features), 
         100 * loss_dict['min_filled_bin_frac'], weight_string
     )
-else:
-    network_name = 'testing'
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# load the selected galaxyfile
-galaxies, data_keys = load_galfiles(redshifts=redshifts, equal_numbers=same_n_points_per_redshift)
+if use_pretrained_network:
+    if os.path.exists(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p'):
+        training_data_dict = pickle.load(open(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p', 'rb'))
+        del training_data_dict["output_train_dict"]
+        del training_data_dict["output_val_dict"]
+        del training_data_dict["output_test_dict"]
+    else:
+        print('there is no pretrained network with that name.')
+        print(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p')
+        sys.exit()
     
-# prepare the training data
-training_data_dict = divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, 
-                                       total_set_size=int(tot_nr_points), train_frac=train_frac, val_frac=val_frac, 
-                                       test_frac=test_frac, pso=True)
-training_data_dict = normalise_data(training_data_dict, norm, pso=True)
+else:
+    # load the selected galaxyfile
+    galaxies, data_keys = load_galfiles(redshifts=redshifts, equal_numbers=same_n_points_per_redshift)
+
+    # prepare the training data
+    training_data_dict = divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, 
+                                           total_set_size=int(tot_nr_points), train_frac=train_frac, val_frac=val_frac, 
+                                           test_frac=test_frac, pso=True)
+    training_data_dict = normalise_data(training_data_dict, norm, pso=True)
 
 
 # Start training
 network = Feed_Forward_Neural_Network(nr_hidden_layers, nr_neurons_per_layer, input_features, output_features, 
                                       activation_function, output_activation, regularisation_strength, network_name)
 network.setup_pso(pso_param_dict, reinf_learning=reinforcement_learning, real_observations=real_observations, 
-                  nr_processes=nr_processes)
+                  nr_processes=nr_processes, start_from_pretrained_net=use_pretrained_network, 
+                  pretrained_net_name=pretrained_network_name)
 network.train_pso(nr_iterations, training_data_dict, std_penalty=std_penalty, verbatim=verbatim, draw_figures=draw_figs, 
                   loss_dict=loss_dict)
 

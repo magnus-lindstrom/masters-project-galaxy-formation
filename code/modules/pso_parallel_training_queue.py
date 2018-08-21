@@ -1,6 +1,8 @@
 import os
+import sys
 from os.path import expanduser
 home_dir = expanduser("~")
+bp_network_dir = home_dir + '/trained_networks/backprop_trained/'
 import numpy as np
 import time
 import datetime
@@ -27,24 +29,26 @@ class Feed_Forward_Neural_Network():
         self.reg_strength = reg_strength
         self.name = network_name
                 
-    def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True, nr_processes=30):
+    def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True, nr_processes=30, 
+                  start_from_pretrained_net=False, pretrained_net_name=None):
         
         self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
                                    self.output_features, self.activation_function, self.output_activation,
-                                   pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes)
+                                   pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes,
+                                   start_from_pretrained_net, pretrained_net_name)
         
     def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
-                  draw_figures=True, loss_dict=None, start_from_pretrained_net=False, pretrained_weights=None):
+                  draw_figures=True, loss_dict=None):
         
         self.pso_swarm.train_network(nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figures, 
-                                     loss_dict, start_from_pretrained_net, pretrained_weights)
+                                     loss_dict)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
     def __init__(self, parent, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
                  activation_function, output_activation, pso_param_dict, reg_strength, reinf_learning, real_observations,
-                 nr_processes):
+                 nr_processes, start_from_pretrained_net, pretrained_net_name):
         self.pso_param_dict = {
             'nr_particles': 40,
             'xMin': -10,
@@ -77,7 +81,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             self.obs_type = 'real_observations'
         else:
             self.obs_type = 'mock_observations'
-        self.model_path = '{}/trained_networks/pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+            
+        self.start_from_pretrained_net = start_from_pretrained_net
+        if self.start_from_pretrained_net:
+            self.model_path = '{}/trained_networks/backprop_and_pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+        else:
+            self.model_path = '{}/trained_networks/pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+        self.pretrained_net_name = pretrained_net_name
+            
         self.nr_processes = nr_processes
         self.nr_hidden_layers = nr_hidden_layers
         self.nr_neurons_per_lay = nr_neurons_per_lay
@@ -97,7 +108,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
     def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figs,
-                      loss_dict, start_from_pretrained_net, pretrained_weights):
+                      loss_dict):
         
         self.training_data_dict = training_data_dict
         
@@ -157,6 +168,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                                                 
                 self.validation_score_history = []
                 self.training_score_history = []
+                
+                self.iterations_of_swarm_val_best = []
+                self.iterations_of_swarm_train_best = []
                 
                 self.avg_speed_before_history = []
                 self.avg_speed_after_history = []
@@ -224,7 +238,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.swarm_best_score_train = result
                 self.training_score_history.append(result)
-                
+                self.iterations_of_swarm_train_best.append(iteration)
                 
                 self.swarm_best_distance_moved_p_point_one.append(
                     minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=.1)
@@ -268,6 +282,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
                     self.swarm_best_pos_val = self.positions[i_particle]
                     self.validation_score_history.append(val_score)
+                    self.iterations_of_swarm_val_best.append(iteration)
                     self.swarm_best_score_val = val_score
                     
                     self.time_since_val_improvement = 0
@@ -290,6 +305,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.write('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}\n'.format(
                       datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
                 f.flush()
+                
+                score_dict = {
+                    'iterations_train_best': self.iterations_of_swarm_train_best,
+                    'iterations_val_best': self.iterations_of_swarm_val_best,
+                    'train_score_history': self.training_score_history,
+                    'val_score_history': self.validation_score_history
+                }
+                pickle.dump(score_dict, open(self.model_path + 'score_history.p', 'wb'))
     
     def check_progress(self, f, glob_start, iteration):
         
@@ -311,7 +334,6 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         if (int(iteration/self.pso_param_dict['restart_check_interval']) == iteration/self.pso_param_dict['restart_check_interval']) \
             and (iteration > 0):
             
-            print('checking if should restart. stds: ', self.best_val_stds)
             should_start_fresh = np.any(self.best_val_stds < self.pso_param_dict['min_std_tol'])
             if should_start_fresh:
                 if self.verbatim:
@@ -367,7 +389,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             f.write('Average speed of the particles after normalization is: %.2f' % (avg_speed_after))
             f.flush()
     
-    def initialise_positions_velocities(self, start_from_pretrained_net, pretrained_weights):
+    def initialise_positions_velocities(self):
                     
         self.positions = []
         self.velocities = []
@@ -391,12 +413,17 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             self.particle_train_best_scores.append(starting_score)
             self.particle_train_best_pos.append(position)
             
-        if start_from_pretrained_weights:
-            self.swarm_best_pos_train = 
-            self.swarm_best_pos_val = 
-        else:
-            self.swarm_best_pos_train = self.positions[0]
-            self.swarm_best_pos_val = self.positions[0]
+        if self.start_from_pretrained_net:
+            if os.path.exists(bp_network_dir + self.pretrained_net_name + '/best_position.p'):
+                best_pos = pickle.load(open(bp_network_dir + self.pretrained_net_name + '/best_position.p', 'rb'))
+                self.positions[0] = best_pos
+            else:
+                print('In subprocess:', os.getpid(),', no pretrained network exists with that name.')
+                print(bp_network_dir + self.pretrained_net_name + '/best_position.p')
+                sys.exit()
+        
+        self.swarm_best_pos_train = self.positions[0]
+        self.swarm_best_pos_val = self.positions[0]
    
     def update_particle(self, i_particle):
 
