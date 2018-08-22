@@ -20,9 +20,9 @@ tot_nr_points = 5e4 # how many examples will be used for training+validation+tes
 train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
-input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
+input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate', 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
-redshifts = [0,.1,.2,.5,1]#,2,3,4,6,8]
+redshifts = [0,.1,.2,.5,1,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
 
 reinforcement_learning = True
@@ -30,9 +30,9 @@ real_observations = False
 
 verbatim = True
 
-test = True
+test = False
 use_pretrained_network = True
-pretrained_network_name = '6x6_all-points_redshifts00_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate_to_Stellar_mass-SFR_test_score5.48e-04'
+pretrained_network_name = '6x6_all-points_redshifts00-01-02-05-10-20-30-40-60-80_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate-Redshift_to_Stellar_mass-SFR_test_score5.91e-06'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
@@ -58,7 +58,7 @@ loss_dict = {
 }
 
 ### PSO parameters
-nr_processes = 3
+nr_processes = 30
 nr_iterations = 2000
 min_std_tol = 0.01 # minimum allowed std for any parameter
 pso_param_dict = {

@@ -200,7 +200,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     particle_scores = np.zeros(self.pso_param_dict['nr_particles'])
                     for i_particle in range(self.pso_param_dict['nr_particles']):
                         
-                        score, particle_nr = self.results_queue.get(timeout=100)
+                        score, particle_nr = self.results_queue.get()
                         particle_scores[particle_nr] = score
                     
                     self.update_loss_stats(particle_scores, f, iteration)
@@ -264,7 +264,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.inp_queue.put([self.positions[i_particle], i_particle, 
                                     'save {:d} training {}'.format(iteration, self.model_path)])
-                out = self.results_queue.get(timeout=20)
+                out = self.results_queue.get()
 
                 if out != 'save_successful':
                     print('out: ', out)
@@ -272,7 +272,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 # see if the result is also the highest val result so far
                 self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
-                val_score, stds = self.results_queue.get(timeout=100)
+                val_score, stds = self.results_queue.get()
                 
                 is_swarm_best_val = val_score < self.swarm_best_score_val
                 
@@ -293,7 +293,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     # save the model
                     self.inp_queue.put([self.positions[i_particle], i_particle, 
                                         'save {:d} validation {}'.format(iteration, self.model_path)])
-                    out = self.results_queue.get(timeout=20)
+                    out = self.results_queue.get()
 
                     if out != 'save_successful':
                         print('out: ', out)
