@@ -16,7 +16,7 @@ np.random.seed(999)
 random.seed(999)
 
 ### General parameters
-tot_nr_points = 5e4 # how many examples will be used for training+validation+testing
+tot_nr_points = 'all' # how many examples will be used for training+validation+testing, either 'all' or <nr>
 train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
@@ -32,15 +32,15 @@ verbatim = True
 
 test = False
 use_pretrained_network = True
-pretrained_network_name = '6x6_all-points_redshifts00-01-02-05-10-20-30-40-60-80_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate-Redshift_to_Stellar_mass-SFR_test_score5.91e-06'
+pretrained_network_name = '10x10_all-points_redshifts00-01-02-05-10-20-30-40-60-80_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate-Redshift_to_Stellar_mass-SFR_test_score4.81e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
 ### Network parameters
-nr_hidden_layers = 6
+nr_hidden_layers = 10
 activation_function = 'tanh'
 output_activation = {'SFR': None, 'Stellar_mass': None}
-nr_neurons_per_layer = 6
+nr_neurons_per_layer = 10
 regularisation_strength = 1e-2
 std_penalty = False
 norm = {'input': 'zero_mean_unit_std', # 'none',   'zero_mean_unit_std',   'zero_to_one'
@@ -51,10 +51,11 @@ loss_dict = {
     'fq_weight': 1,
     'ssfr_weight': 1,
     'smf_weight': 1,
-    'shm_weight': 3,
+    'shm_weight': 1,
     'dist_outside_punish': 'exp',
     'dist_outside_factor': 10,
-    'min_filled_bin_frac': 0
+    'min_filled_bin_frac': 0,
+    'nr_redshifts_per_eval': 'all' # nr, 'all'
 }
 
 ### PSO parameters
@@ -106,7 +107,7 @@ else:
 
     # prepare the training data
     training_data_dict = divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, 
-                                           total_set_size=int(tot_nr_points), train_frac=train_frac, val_frac=val_frac, 
+                                           total_set_size=tot_nr_points, train_frac=train_frac, val_frac=val_frac, 
                                            test_frac=test_frac, pso=True)
     training_data_dict = normalise_data(training_data_dict, norm, pso=True)
 

@@ -84,9 +84,23 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
         self.start_from_pretrained_net = start_from_pretrained_net
         if self.start_from_pretrained_net:
-            self.model_path = '{}/trained_networks/backprop_and_pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+            path = '{}/trained_networks/backprop_and_pso_trained/{}/{}'.format(home_dir, self.obs_type, self.parent.name)
+            already_exists = True
+            while already_exists:
+                if os.path.exists(path):
+                    path += '_new'
+                else:
+                    already_exists = False
+                self.model_path = path + '/'
         else:
-            self.model_path = '{}/trained_networks/pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+            path = '{}/trained_networks/pso_trained/{}/{}'.format(home_dir, self.obs_type, self.parent.name)
+            already_exists = True
+            while already_exists:
+                if os.path.exists(path):
+                    path += '_new'
+                else:
+                    already_exists = False
+                self.model_path = path + '/'
         self.pretrained_net_name = pretrained_net_name
             
         self.nr_processes = nr_processes

@@ -803,9 +803,17 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
     dist_outside = 0
 #     nr_empty_bins = np.zeros(len(training_data_dict['unique_redshifts']))
     tot_nr_points = 0
-    frac_outside = np.zeros(len(training_data_dict['unique_redshifts']))
+    
+    if data_type != 'train' or loss_dict['nr_redshifts_per_eval'] == 'all':
+        nr_redshifts = len(training_data_dict['unique_redshifts'])
+    else:
+        nr_redshifts = loss_dict['nr_redshifts_per_eval']
+    evaluated_redshift_indeces = np.random.choice(len(training_data_dict['unique_redshifts']), nr_redshifts, replace=False)
+    evaluated_redshifts = np.array(training_data_dict['unique_redshifts'])[evaluated_redshift_indeces]
+    frac_outside = np.zeros(len(evaluated_redshifts))
 
-    for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
+
+    for i, (i_red, redshift) in enumerate(zip(evaluated_redshift_indeces, evaluated_redshifts)):
 
         relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
 
@@ -878,7 +886,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist))
 
 #         nr_empty_bins[i_red] = np.sum(np.invert(non_nan_indeces))
-        frac_outside[i_red] = nr_points_outside_binning_feat_range / nr_points_redshift
+        frac_outside[i] = nr_points_outside_binning_feat_range / nr_points_redshift
 
         if (np.sum(non_nan_indeces) > 0 and np.sum(non_nan_indeces)/n_bins > loss_dict['min_filled_bin_frac']):
         
@@ -895,7 +903,8 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
          
         
     # Get the dist outside per redshift measured
-    dist_outside /= len(training_data_dict['unique_redshifts'])
+    dist_outside /= nr_redshifts
+    loss /= nr_redshifts
     
     if loss_dict != None:
     
