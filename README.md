@@ -18,5 +18,3 @@
     - **pso_code**
       - pso_general_purpose_notebook.ipynb
       the main notebook for backprop networks to train models, evaluate, create figures, etc
-  - **models**
-  already trained models. So far nothing of importance has been saved here
