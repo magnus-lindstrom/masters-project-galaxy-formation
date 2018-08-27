@@ -9,6 +9,7 @@ import random
 import numpy as np
 
 from data_processing import *
+from loading_datasets import *
 from plotting import *
 from pso_parallel_training_queue import *
 
@@ -20,9 +21,9 @@ tot_nr_points = 'all' # how many examples will be used for training+validation+t
 train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
-input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate', 'Redshift']
+input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
-redshifts = [0,.1,.2,.5,1,2,3,4,6,8]
+redshifts = [0]#,.1,.2,.5,1,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
 
 reinforcement_learning = True
@@ -31,16 +32,16 @@ real_observations = False
 verbatim = True
 
 test = False
-use_pretrained_network = True
+use_pretrained_network = False
 pretrained_network_name = '10x10_all-points_redshifts00-01-02-05-10-20-30-40-60-80_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate-Redshift_to_Stellar_mass-SFR_test_score4.81e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
 ### Network parameters
-nr_hidden_layers = 10
+nr_hidden_layers = 7
 activation_function = 'tanh'
 output_activation = {'SFR': None, 'Stellar_mass': None}
-nr_neurons_per_layer = 10
+nr_neurons_per_layer = 7
 regularisation_strength = 1e-2
 std_penalty = False
 norm = {'input': 'zero_mean_unit_std', # 'none',   'zero_mean_unit_std',   'zero_to_one'
@@ -51,9 +52,11 @@ loss_dict = {
     'fq_weight': 1,
     'ssfr_weight': 1,
     'smf_weight': 1,
-    'shm_weight': 1,
+    'shm_weight': 2,
     'dist_outside_punish': 'exp',
     'dist_outside_factor': 10,
+    'no_coverage_punish': 'exp',
+    'no_coverage_factor': 10,
     'min_filled_bin_frac': 0,
     'nr_redshifts_per_eval': 'all' # nr, 'all'
 }
@@ -82,10 +85,20 @@ else:
     redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
     weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
                               str(loss_dict['shm_weight'])])
-    network_name = '{:d}x{:d}_{:.1e}points_redshifts{}_{}_{}{}_loss_{}_minFilledBinFrac{:03.0f}_fq-ssfr-smf-shm_weights_{}'.format(
-        nr_hidden_layers, nr_neurons_per_layer, tot_nr_points, redshift_string, activation_function, 
+    if loss_dict['nr_redshifts_per_eval'] != 'all':
+        nr_redshift_per_eval_string = '{:d}'.format(loss_dict['nr_redshifts_per_eval'])
+    else:
+        nr_redshift_per_eval_string = loss_dict['nr_redshifts_per_eval']
+    if tot_nr_points == 'all':
+        tot_nr_points_str = tot_nr_points
+    else:
+        tot_nr_points_str = '{:.1e}'.format(tot_nr_points)
+
+    network_name = '{:d}x{:d}_{}points_redshifts{}_{}_{}{}_loss_{}_minFilledBinFrac{:03.0f}_noCovPunish{}{:d}_nrRedshiftPerEval-{}_fq-ssfr-smf-shm_weights_{}'.format(
+        nr_hidden_layers, nr_neurons_per_layer, tot_nr_points_str, redshift_string, activation_function, 
         loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], '-'.join(input_features), 
-        100 * loss_dict['min_filled_bin_frac'], weight_string
+        100 * loss_dict['min_filled_bin_frac'], loss_dict['no_coverage_punish'], loss_dict['no_coverage_factor'], 
+        nr_redshift_per_eval_string, weight_string
     )
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""

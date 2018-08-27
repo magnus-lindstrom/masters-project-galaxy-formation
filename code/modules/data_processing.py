@@ -5,119 +5,6 @@ import json
 import sys
 from scipy.stats import binned_statistic
 
-
-def load_galfiles(redshifts , with_densities=False, equal_numbers=False, with_growth=True):
-
-    if with_growth:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density_with_growth_rate_no_lastMajM/'
-    elif with_densities:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
-    else:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
-    
-    galaxy_list = []
-    gal_header = None
-    for redshift in redshifts:
-
-        galfile_path = galfile_directory + 'galaxies.Z{:02.0f}.h5'.format(redshift*10)
-        if os.path.isfile(galfile_path):
-            galfile = pd.read_hdf(galfile_path)
-            gals = galfile.values
-            gal_header = galfile.keys().tolist()
-            
-            redshift_column = redshift * np.ones((np.shape(gals)[0],1))
-            gals = np.concatenate((gals, redshift_column), axis=1)
-            
-            # Scramble the order of the galaxies, since they are somewhat ordered to begin with
-            inds = np.random.permutation(np.shape(gals)[0])
-            gals = gals[inds, :]
-            
-            galaxy_list.append(gals)
-            
-        else:
-            print('file not found for redshift {:02.0f} in path \'{}\''.format(redshift, galfile_path))
-    gal_header.append('Redshift')
-            
-    if galaxy_list:
-       
-        if equal_numbers:
-            min_nr = 1e100
-            for gals in galaxy_list:
-                if np.shape(gals)[0] < min_nr:
-                    min_nr = np.shape(gals)[0]
-            galaxies = None
-            for gals in galaxy_list:
-                gals = gals[:min_nr, :]
-                if galaxies is not None:
-                    galaxies = np.concatenate((galaxies, gals), axis=0)
-                else:
-                    galaxies = gals
-        else:
-            galaxies = None
-            for gals in galaxy_list:
-                if galaxies is not None:
-                    galaxies = np.concatenate((galaxies, gals), axis=0)
-                else:
-                    galaxies = gals
-
-        # Scramble the order of the galaxies, since the redshifts are still in order
-        inds = np.random.permutation(np.shape(galaxies)[0])
-        galaxies = galaxies[inds, :]
-        
-        data_keys = {}
-        for col_nr, key in enumerate(gal_header):
-            data_keys[key] = col_nr
-
-        ### Remove data points with halo mass below 10.5
-        galaxies = galaxies[galaxies[:,data_keys['Halo_mass']] > 10.5, :]
-        
-        return galaxies, data_keys
-    else:
-        print('No files with the specified redshifts found.')
-        return 
-
-def load_single_galfile(redshift, with_densities=False, with_growth=True):
-    
-    if with_growth:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density_with_growth_rate_no_lastMajM/'
-    elif with_densities:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_with_density/'
-    else:
-        galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
-    
-    galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift*10)
-    galfile = pd.read_hdf(galfile_path)
-    galaxies = galfile.values
-    gal_header = galfile.keys().tolist()
-    
-    data_keys = {}
-    for col_nr, key in enumerate(gal_header):
-        data_keys[key] = col_nr
-    
-    print('shape before modification: ',np.shape(galaxies))
-    ### Remove data points with halo mass below 10.5
-    galaxies = galaxies[galaxies[:,data_keys['Halo_mass']] > 10.5, :]
-    
-    # Scramble the order of the galaxies, since they may be somewhat ordered to begin with
-    inds = np.random.permutation(np.shape(galaxies)[0])
-    galaxies = galaxies[inds, :]
-    redshift_column = redshift * np.ones((np.shape(galaxies)[0],1))
-    galaxies = np.concatenate((galaxies, redshift_column), axis=1)
-    
-    print('shape after removing small galaxies and adding redshift: ',np.shape(galaxies))
-    
-    if np.shape(galaxies)[1] == 22:
-        data_keys['Environmental_density'] = 20
-        unit_dict['Environmental_density'] = 'log($M_{G}/M_{S}/Mpc^3$)'
-        data_keys['Redshift'] = 21
-        unit_dict['Redshift'] = 'z'
-    else:
-        data_keys['Redshift'] = 20
-        unit_dict['Redshift'] = 'z'
-        
-    return galaxies, data_keys
-
-
 def get_unit_dict():
     
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
@@ -692,117 +579,13 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh, weigh_by_
     return [train_weights, val_weights, test_weights]
 
 
-def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh_by_redshift=False):
-    
-    unique_redshifts = training_data_dict['unique_redshifts']
-    train_w_tmp = np.zeros(len(training_data_dict['train_indices']))
-    val_w_tmp = np.zeros(len(training_data_dict['val_indices']))
-    test_w_tmp = np.zeros(len(training_data_dict['test_indices']))
-
-    # make the heavier halos more important in every redshift
-    for redshift in unique_redshifts:
-        relevant_train_inds = training_data_dict['original_data'][training_data_dict['train_indices'], 
-                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
-        relevant_val_inds = training_data_dict['original_data'][training_data_dict['val_indices'], 
-                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
-        relevant_test_inds = training_data_dict['original_data'][training_data_dict['test_indices'], 
-                                                              training_data_dict['original_data_keys']['Redshift']] == redshift
-
-        train_masses = training_data_dict['original_data'][training_data_dict['train_indices'],
-                                                           training_data_dict['original_data_keys']['Halo_mass']]
-        train_w_redshift = train_masses[relevant_train_inds]
-        train_w_redshift = np.power(10, train_w_redshift)
-        train_w_redshift = train_w_redshift / np.sum(train_w_redshift) 
-        
-        val_masses = training_data_dict['original_data'][training_data_dict['val_indices'],
-                                                           training_data_dict['original_data_keys']['Halo_mass']]
-        val_w_redshift = val_masses[relevant_val_inds]
-        val_w_redshift = np.power(10, val_w_redshift)
-        val_w_redshift = val_w_redshift / np.sum(val_w_redshift) 
-        
-        test_masses = training_data_dict['original_data'][training_data_dict['test_indices'],
-                                                           training_data_dict['original_data_keys']['Halo_mass']]
-        test_w_redshift = test_masses[relevant_test_inds]
-        test_w_redshift = np.power(10, test_w_redshift)
-        test_w_redshift = test_w_redshift / np.sum(test_w_redshift) 
-        
-        train_w_tmp[relevant_train_inds] = train_w_redshift
-        val_w_tmp[relevant_val_inds] = val_w_redshift
-        test_w_tmp[relevant_test_inds] = test_w_redshift
-    
-    train_w_tmp = train_w_tmp / np.sum(train_w_tmp) 
-    val_w_tmp = val_w_tmp / np.sum(val_w_tmp) 
-    test_w_tmp = test_w_tmp / np.sum(test_w_tmp) 
-    
-    # check that weights sum up to one
-    sums = np.array([np.sum(train_w_tmp), np.sum(val_w_tmp), np.sum(test_w_tmp)])
-    errs = np.abs(1 - sums)
-    too_high = errs > 1e-6
-    if any(too_high):
-        print('The weights were not normalised properly. Sums should be one: {}, {}, {}'.format(sums[0], sums[1], sums[2]))
-        return
-    
-    train_weights = {}
-    val_weights = {}
-    test_weights = {}
-
-    for output in output_features:
-        if output in outputs_to_weigh:
-            train_weights[output] = train_w_tmp
-            val_weights[output] = val_w_tmp
-            test_weights[output] = test_w_tmp
-        else:
-            train_weights[output] = np.ones(int(len(training_data_dict['train_indices']))) / len(training_data_dict['train_indices'])
-            val_weights[output] = np.ones(int(len(training_data_dict['val_indices']))) / len(training_data_dict['val_indices'])
-            test_weights[output] = np.ones(int(len(training_data_dict['test_indices']))) / len(training_data_dict['test_indices'])
-            
-    if weigh_by_redshift:
-        train_redshifts = training_data_dict['input_train_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
-        val_redshifts = training_data_dict['input_val_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
-        test_redshifts = training_data_dict['input_test_dict']['main_input'][:, training_data_dict['x_data_keys']['Redshift']]
-        
-        train_unique_redshifts = np.unique(train_redshifts)
-        val_unique_redshifts = np.unique(val_redshifts)
-        test_unique_redshifts = np.unique(test_redshifts)
-        
-        train_redshift_weights = np.zeros(len(train_redshifts))
-        val_redshift_weights = np.zeros(len(val_redshifts))
-        test_redshift_weights = np.zeros(len(test_redshifts))
-        for redshift in train_unique_redshifts:
-            weight = 1 / (len(train_unique_redshifts) * np.sum(train_redshifts == redshift))
-            train_redshift_weights[train_redshifts == redshift] = weight
-        for redshift in val_unique_redshifts:
-            weight = 1 / (len(val_unique_redshifts) * np.sum(val_redshifts == redshift))
-            val_redshift_weights[val_redshifts == redshift] = weight
-        for redshift in test_unique_redshifts:
-            weight = 1 / (len(test_unique_redshifts) * np.sum(test_redshifts == redshift))
-            test_redshift_weights[test_redshifts == redshift] = weight
-        
-        for output in output_features:
-            train_weights[output] = (train_weights[output] + train_redshift_weights) / 2
-            val_weights[output] = (val_weights[output] + val_redshift_weights) / 2
-            test_weights[output] = (test_weights[output] + test_redshift_weights) / 2
-              
-    # check that weights sum up to one
-    sums = np.array([np.sum(train_weights['Stellar_mass']), np.sum(train_weights['SFR']), np.sum(val_weights['Stellar_mass']),
-                     np.sum(val_weights['SFR']), np.sum(test_weights['Stellar_mass']), np.sum(test_weights['SFR'])])
-    errs = np.abs(1 - sums)
-    too_high = errs > 1e-6
-    if any(too_high):
-        print('The weights were not normalised properly. Sums should be one: {}, {}, {}, {}, {}, {}'.format(sums[0], sums[1], 
-                                                                                                            sums[2], sums[3], 
-                                                                                                            sums[4], sums[5]))
-        return
-            
-    return [train_weights, val_weights, test_weights]
-
-
 def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_type, loss_dict):
     
     loss = 0
     dist_outside = 0
 #     nr_empty_bins = np.zeros(len(training_data_dict['unique_redshifts']))
     tot_nr_points = 0
+    frac_of_non_covered_interval = 0
     
     if data_type != 'train' or loss_dict['nr_redshifts_per_eval'] == 'all':
         nr_redshifts = len(training_data_dict['unique_redshifts'])
@@ -818,7 +601,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
         relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
 
         bin_edges = training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges']
-
+        
         nr_points_outside_binning_feat_range = \
             np.sum(binning_feat[relevant_inds] < 
                   training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_edges'][0]) \
@@ -884,7 +667,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
         else:    
             pred_bin_feat_dist = bin_means
             non_nan_indeces = np.invert(np.isnan(pred_bin_feat_dist))
-
+            
 #         nr_empty_bins[i_red] = np.sum(np.invert(non_nan_indeces))
         frac_outside[i] = nr_points_outside_binning_feat_range / nr_points_redshift
 
@@ -900,25 +683,40 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
                             / errors[non_nan_indeces]) / n_bins) + np.sum(np.invert(non_nan_indeces))
         else:
             loss += 1000
-         
-        
+            
+        if bin_feat_name != 'smf':
+            bin_widths = training_data_dict['{}_data'.format(bin_feat_name)]['{:.1f}'.format(redshift)]['bin_widths']
+            bin_interval_length = bin_edges[-1] - bin_edges[0] - bin_widths # the wanted range of predictions
+            pred_interval_length = np.max(bin_feat[relevant_inds]) - np.min(bin_feat[relevant_inds])
+            if pred_interval_length < bin_interval_length:
+                frac_of_non_covered_interval += 1 - pred_interval_length / bin_interval_length
+            
     # Get the dist outside per redshift measured
     dist_outside /= nr_redshifts
+    frac_of_non_covered_interval /= nr_redshifts
     loss /= nr_redshifts
     
     if loss_dict != None:
     
         dist_outside_punish = loss_dict['dist_outside_punish']
+        no_coverage_punish = loss_dict['no_coverage_punish']
+        
+        if no_coverage_punish == 'exp':
+            theta = loss_dict['no_coverage_factor']
+            loss*= np.exp(theta * frac_of_non_covered_interval)
+        elif no_coverage_punish == 'none':
+            pass
+        else:
+            print('do not recognise the no_coverage_punish')
         
         if dist_outside_punish == 'exp':
-        
             xi = loss_dict['dist_outside_factor']
             loss*= np.exp(xi * dist_outside/tot_nr_points)
-
-        elif dift_outside_punish == 'lin':
+        elif dist_outside_punish == 'lin':
             slope = loss_dict['dist_outside_factor']
             redshift_score *= (1 + slope*frac_outside)
-            
+        elif dist_outside_punish == 'none':
+            pass
         else:
             print('do not recognise the dist_outside_punish')
 
