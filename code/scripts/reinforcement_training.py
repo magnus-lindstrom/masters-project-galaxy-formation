@@ -21,31 +21,31 @@ tot_nr_points = 'all' # how many examples will be used for training+validation+t
 train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
-input_features = ['Halo_mass', 'Halo_mass_peak', 'Scale_peak_mass', 'Scale_half_mass', 'Halo_growth_rate']#, 'Redshift']
+input_features = ['Halo_mass_peak', 'Scale_peak_mass', 'Halo_growth_rate', 'Halo_radius', 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
-redshifts = [0]#,.1,.2,.5,1,2,3,4,6,8]
+redshifts = [0,.1,.2,.5]#,1,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
 
 reinforcement_learning = True
-real_observations = False
+real_observations = True
 
 verbatim = True
 
-test = False
-use_pretrained_network = False
-pretrained_network_name = '10x10_all-points_redshifts00-01-02-05-10-20-30-40-60-80_tanh_Halo_mass-Halo_mass_peak-Scale_peak_mass-Scale_half_mass-Halo_growth_rate-Redshift_to_Stellar_mass-SFR_test_score4.81e-07'
+test = True
+use_pretrained_network = True
+pretrained_network_name = '8x8_2.0e+05points_redshifts00-01-02-05-10_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_test_score7.48e-06'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
 ### Network parameters
-nr_hidden_layers = 7
+nr_hidden_layers = 8
 activation_function = 'tanh'
 output_activation = {'SFR': None, 'Stellar_mass': None}
-nr_neurons_per_layer = 7
+nr_neurons_per_layer = 8
 regularisation_strength = 1e-2
 std_penalty = False
 norm = {'input': 'zero_mean_unit_std', # 'none',   'zero_mean_unit_std',   'zero_to_one'
-        'output': 'none'} # output norm does not matter for pso, only bp
+        'output': 'none'} # output norm does not matter for pso, only bp (script-wise)
 
 ### Loss parameters
 loss_dict = {
@@ -53,12 +53,14 @@ loss_dict = {
     'ssfr_weight': 1,
     'smf_weight': 1,
     'shm_weight': 2,
+    'csfrd_weight': 1,
     'dist_outside_punish': 'exp',
     'dist_outside_factor': 10,
     'no_coverage_punish': 'exp',
     'no_coverage_factor': 10,
     'min_filled_bin_frac': 0,
-    'nr_redshifts_per_eval': 'all' # nr, 'all'
+    'nr_redshifts_per_eval': 'all', # nr, 'all'
+    'nr_bins_real_obs': 20
 }
 
 ### PSO parameters
@@ -82,6 +84,7 @@ if test:
 elif use_pretrained_network:
     network_name = pretrained_network_name
 else:
+    
     redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
     weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
                               str(loss_dict['shm_weight'])])
@@ -94,12 +97,18 @@ else:
     else:
         tot_nr_points_str = '{:.1e}'.format(tot_nr_points)
 
-    network_name = '{:d}x{:d}_{}points_redshifts{}_{}_{}{}_loss_{}_minFilledBinFrac{:03.0f}_noCovPunish{}{:d}_nrRedshiftPerEval-{}_fq-ssfr-smf-shm_weights_{}'.format(
-        nr_hidden_layers, nr_neurons_per_layer, tot_nr_points_str, redshift_string, activation_function, 
-        loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], '-'.join(input_features), 
-        100 * loss_dict['min_filled_bin_frac'], loss_dict['no_coverage_punish'], loss_dict['no_coverage_factor'], 
-        nr_redshift_per_eval_string, weight_string
-    )
+    if real_observations:
+        network_name = '{:d}x{:d}_{}points_redshifts{}_{}_{}_nrRedshiftPerEval-{}_fq-ssfr-smf_weights_{}_realObs'.format(
+            nr_hidden_layers, nr_neurons_per_layer, tot_nr_points_str, redshift_string, activation_function, 
+            '-'.join(input_features), nr_redshift_per_eval_string, weight_string
+        )
+    else:
+        network_name = '{:d}x{:d}_{}points_redshifts{}_{}_{}{}_loss_{}_minFilledBinFrac{:03.0f}_noCovPunish{}{:d}_nrRedshiftPerEval-{}_fq-ssfr-smf-shm_weights_{}_mockObs'.format(
+            nr_hidden_layers, nr_neurons_per_layer, tot_nr_points_str, redshift_string, activation_function, 
+            loss_dict['dist_outside_punish'], loss_dict['dist_outside_factor'], '-'.join(input_features), 
+            100 * loss_dict['min_filled_bin_frac'], loss_dict['no_coverage_punish'], loss_dict['no_coverage_factor'], 
+            nr_redshift_per_eval_string, weight_string
+        )
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
@@ -121,7 +130,7 @@ else:
     # prepare the training data
     training_data_dict = divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, 
                                            total_set_size=tot_nr_points, train_frac=train_frac, val_frac=val_frac, 
-                                           test_frac=test_frac, pso=True)
+                                           test_frac=test_frac, pso=True, real_observations=real_observations)
     training_data_dict = normalise_data(training_data_dict, norm, pso=True)
 
 

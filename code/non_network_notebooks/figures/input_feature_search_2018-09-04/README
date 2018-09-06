@@ -1,0 +1,2 @@
+Used a random forest with 30 trees (did a run first to see where the optimal score was obtained).
+Had redshifts 0, .1, .2, .5, 1, 2, 3, 4, 6, 8 to work with.

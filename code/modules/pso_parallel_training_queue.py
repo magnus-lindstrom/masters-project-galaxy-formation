@@ -13,7 +13,8 @@ from model_setup import *
 from data_processing import get_weights, predict_points, loss_func_obs_stats
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
-from plotting import get_smf_ssfr_fq_plot
+from plotting import get_real_obs_plot, get_smf_ssfr_fq_plot_mock_obs
+
 
 class Feed_Forward_Neural_Network():
     
@@ -154,7 +155,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             if draw_figs:
                 figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.model_path, 
                                                                                self.weight_shapes, self.network_args, 
-                                                                               training_data_dict))
+                                                                               training_data_dict, self.train_on_real_obs,
+                                                                               loss_dict))
                 process_list.append(figure_drawer_process)
             
             for process in process_list:
@@ -507,7 +509,8 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                 
                 directory = '{}{}_best/'.format(model_path, mode_of_hs)
                 
-                if iteration == '0':
+                dir_exists = os.path.exists(directory)
+                if not dir_exists:
                     os.makedirs(os.path.dirname(directory + 'iter_{}.h5'.format(iteration)), exist_ok=True)
                     
                     for the_file in os.listdir(directory):
@@ -515,7 +518,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                         if os.path.isfile(file_path):
                             os.unlink(file_path)
                             
-                    pickle.dump(training_data_dict, open(directory + 'training_data_dict.p', 'wb'))
+                    pickle.dump(training_data_dict, open(model_path + 'training_data_dict.p', 'wb'))
             
                 model.save(directory + 'iter_{}.h5'.format(iteration))
                 
@@ -585,7 +588,7 @@ def save_distances(queue, model_path):
 
         pickle.dump(distance_dict, open(file_path, 'wb'))
 
-def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_dict):
+def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_dict, real_obs, loss_dict):
     
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args
@@ -606,8 +609,12 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
             fig_file_path = '{}figures_validation_weights/val_data/all_losses/Z{:02.0f}/iteration_{}.png'.format(
                 model_path, redshift*10, iteration
             )
-            get_smf_ssfr_fq_plot(model, training_data_dict, redshift=redshift, title=title, data_type='val', full_range=True, 
-                                 save=True, file_path=fig_file_path, running_from_script=True)
+            if real_obs:
+                get_real_obs_plot(model, training_data_dict, redshift=redshift, title=title, data_type='val', 
+                                  save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
+            else:
+                get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=redshift, title=title, data_type='val', 
+                                              full_range=True, save=True, file_path=fig_file_path, running_from_script=True)
         
 
         

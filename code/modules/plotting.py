@@ -888,6 +888,9 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
         x_data = convert_units(x_data, training_data_dict['norm']['input'], back_to_original=True, 
                                conv_values=training_data_dict['conv_values_input'])
         x_data = x_data[:n_points, x_feat_index]
+    elif x_axis_feature == 'Halo_mass' and 'original_halo_masses_{}'.format(data_type) in list(training_data_dict.keys()):
+        x_data = training_data_dict['original_halo_masses_{}'.format(data_type)][:n_points]
+        x_label = 'log(Emerge$[{}])$'.format(unit_dict[x_axis_feature])
         
     y_feat_index = training_data_dict['output_features'].index(y_axis_feature)
     
@@ -1123,15 +1126,15 @@ def get_fq_plot(model, training_data_dict, galaxies=None, title=None, data_type=
         return fig
     
     
-def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', full_range=False, 
-                         save=False, file_path=None, dpi=100, running_from_script=False):
+def get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', 
+                                  full_range=False, save=False, file_path=None, dpi=100, running_from_script=False):
     
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
     
     unit_dict = get_unit_dict()
     
-    function_dict = plots_obs_stats(model, training_data_dict, real_obs=False, data_type=data_type, full_range=full_range)
+    function_dict = plots_obs_stats(model, training_data_dict, real_obs=real_obs, data_type=data_type, full_range=full_range)
     
     redshift_index = training_data_dict['unique_redshifts'].index(redshift)
     
@@ -1190,6 +1193,88 @@ def get_smf_ssfr_fq_plot(model, training_data_dict, redshift=0, galaxies=None, t
                      fontsize=20)
             
         plt.legend(['DNN', 'Emerge'], loc=location, fontsize='xx-large')
+
+#     ax = plt.subplot(2,2,4)
+    
+#     plt.hist(predicted_stellar_masses_redshift[redshift_index], bins=100, log=True)
+#     plt.xlabel(x_label, fontsize=15)   
+    
+    if title is not None:
+#         title = title + '\n\nz = {:2.1f}, {:2.0f}% of points outside interval [{:.2f}, {:.2f}], {:d} empty bins'.format(
+#         redshifts[redshift_index], 100 * frac_outside_redshift[redshift_index], acceptable_interval_redshift[redshift_index][0], 
+#         acceptable_interval_redshift[redshift_index][1], nr_empty_bins_redshift[redshift_index])
+        plt.suptitle(title, y=.96, fontsize=20)
+        
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+    else:
+        return fig
+    
+    
+def get_real_obs_plot(model, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', full_range=False, 
+                         save=False, file_path=None, dpi=100, running_from_script=False, loss_dict=None):
+    
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
+    
+    unit_dict = get_unit_dict()
+    
+    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
+                                    loss_dict=loss_dict)
+    # pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, obs_errors_ssfr, redshifts_ssfr
+#     print('true_ssfr: ', function_dict['ssfr'][1])
+#     print('obs_bin_centers_ssfr: ', function_dict['ssfr'][3])
+#     print('obs_errors_ssfr: ', function_dict['ssfr'][4])
+    redshift_index = training_data_dict['unique_redshifts'].index(redshift)
+    
+    (pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, obs_errors_ssfr, redshifts_ssfr) = function_dict['ssfr']
+    (pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, obs_errors_smf, redshifts_smf) = function_dict['smf']
+    (pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, obs_errors_fq, redshifts_fq) = function_dict['fq']
+    
+    plot_names = ['ssfr', 'smf', 'fq']
+    pred_data = [pred_ssfr, pred_smf, pred_fq]
+    true_data = [true_ssfr, true_smf, true_fq]
+    pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq]
+    obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq]
+    obs_errors = [obs_errors_ssfr, obs_errors_smf, obs_errors_fq]
+    
+    x_labels = [
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+    ]
+    y_labels = [
+        'log($[{}])$'.format(unit_dict['SSFR']),
+        'log($[{}])$'.format(unit_dict['SMF']),
+        '${}$'.format(unit_dict['FQ']),
+    ]
+    
+    fig = plt.figure(figsize=(20,15))
+    for i in range(3):
+        ax = plt.subplot(2,2,i+1)
+
+        plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r-o', markersize=8)
+        plt.errorbar(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], yerr=obs_errors[i][redshift_index], 
+                     fmt = 'none', capsize=5)
+        plt.xlabel(x_labels[i], fontsize=15)
+        plt.ylabel(y_labels[i], fontsize=15)
+        
+        if i == 2:
+            location = 'upper left'
+#             ax.text(.15, .75, 'z = {:2.1f}\n{:.1f}% outside interval'.format(redshift, fracs_outside[i][redshift_index]), 
+#                     fontsize=20, transform = ax.transAxes, horizontalalignment='center')
+        else:
+            location = 'upper right'
+#             ax.text(.85, .75, 'z = {:2.1f}\n{:.1f}% outside interval'.format(redshift, fracs_outside[i][redshift_index]), 
+#                     fontsize=20, transform = ax.transAxes, horizontalalignment='center')
+            
+        ax.set_title('z = {:2.1f}'.format(redshift), 
+                     fontsize=20)
+            
+        plt.legend(['DNN', 'Observational data'], loc=location, fontsize='xx-large')
 
 #     ax = plt.subplot(2,2,4)
     
