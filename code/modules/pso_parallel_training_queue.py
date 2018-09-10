@@ -603,6 +603,22 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
         weight_mat_list = get_weights(position, weight_shapes)
         model.set_weights(weight_mat_list)
         
+        if real_obs: # first plot contains only csfrd, which is not redshift specific
+            title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
+            fig_csfrd_file_path = '{}figures_validation_weights/val_data/all_losses/csfrd/iteration_{}.png'.format(
+                model_path, iteration
+            )
+            get_real_obs_plot(model, training_data_dict, csfrd_plot=True, title=title, data_type='val', 
+                              save=True, file_path=fig_csfrd_file_path, running_from_script=True, loss_dict=loss_dict)
+            
+        if real_obs: # second plot is of the projected correlation function, also not redshift specific
+            title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
+            fig_wp_file_path = '{}figures_validation_weights/val_data/all_losses/wp/iteration_{}.png'.format(
+                model_path, iteration
+            )
+            get_real_obs_plot(model, training_data_dict, clustering_plot=True, title=title, data_type='val', 
+                              save=True, file_path=fig_wp_file_path, running_from_script=True, loss_dict=loss_dict)
+            
         for redshift in training_data_dict['unique_redshifts']:
         
             title = 'Redshift {:.1f}, iteration {}, best validation weights, validation data points shown'.format(redshift, iteration)
@@ -610,6 +626,7 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                 model_path, redshift*10, iteration
             )
             if real_obs:
+                # second plot contains redshift specific quantities
                 get_real_obs_plot(model, training_data_dict, redshift=redshift, title=title, data_type='val', 
                                   save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
             else:

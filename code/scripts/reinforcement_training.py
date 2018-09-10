@@ -22,8 +22,9 @@ train_frac = 0.8
 val_frac = 0.1
 test_frac = 0.1
 input_features = ['Halo_mass_peak', 'Scale_peak_mass', 'Halo_growth_rate', 'Halo_radius', 'Redshift']
+# ideal inputs are ['Halo_mass_peak', 'Scale_peak_mass', 'Halo_growth_rate', 'Halo_radius', 'Redshift']
 output_features = ['Stellar_mass', 'SFR']
-redshifts = [0,.1,.2,.5]#,1,2,3,4,6,8]
+redshifts = [0,.1,.2]#,.5]#,1,2,3,4,6,8]
 same_n_points_per_redshift = False # if using the smf in the objective function, must be false!
 
 reinforcement_learning = True
@@ -33,7 +34,7 @@ verbatim = True
 
 test = True
 use_pretrained_network = True
-pretrained_network_name = '8x8_2.0e+05points_redshifts00-01-02-05-10_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_test_score7.48e-06'
+pretrained_network_name = '8x8_all-points_redshifts00-01-02-05-10_train-test-val050-050-000_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_val_score4.72e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = True
 
@@ -51,9 +52,10 @@ norm = {'input': 'zero_mean_unit_std', # 'none',   'zero_mean_unit_std',   'zero
 loss_dict = {
     'fq_weight': 1,
     'ssfr_weight': 1,
-    'smf_weight': 1,
-    'shm_weight': 2,
+    'smf_weight': 1, 
+    'shm_weight': 2, # is using mock observations
     'csfrd_weight': 1,
+    'clustering_weight': 1,
     'dist_outside_punish': 'exp',
     'dist_outside_factor': 10,
     'no_coverage_punish': 'exp',
@@ -68,7 +70,7 @@ nr_processes = 30
 nr_iterations = 2000
 min_std_tol = 0.01 # minimum allowed std for any parameter
 pso_param_dict = {
-    'nr_particles': 3 * nr_processes,
+    'nr_particles': 1 * nr_processes,
     'inertia_weight_start': 1.4,
     'inertia_weight_min': 0.3,
     'exploration_iters': 1500,
@@ -118,6 +120,12 @@ if use_pretrained_network:
         del training_data_dict["output_train_dict"]
         del training_data_dict["output_val_dict"]
         del training_data_dict["output_test_dict"]
+        
+        # TEMPORARY, REMOVE AFTER TRAINING A NEW NETWORK
+#         training_data_dict["train_coordinates"] /= 67.81
+#         training_data_dict["val_coordinates"] /= 67.81
+#         training_data_dict["test_coordinates"] /= 67.81
+#         training_data_dict['real_clustering_data']['pi_max'] *= 67.81
     else:
         print('there is no pretrained network with that name.')
         print(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p')

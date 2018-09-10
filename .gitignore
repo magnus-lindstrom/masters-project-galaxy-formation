@@ -28,3 +28,4 @@ code/backpropagation_code/hyperparameter_searches/
 *.p
 *.avi
 *pso_general_purpose_notebook_single_process.ipynb
+.astropy/
