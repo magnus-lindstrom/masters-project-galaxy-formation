@@ -854,22 +854,22 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
     # TODO, fix the redshifts in this plot, appears that only one redshift is plotted?
     unit_dict = get_unit_dict()
     
-    if not y_axis_feature in training_data_dict['output_features']:
+    if not y_axis_feature in training_data_dict['network_args']['output_features']:
         print('y axis feature not available (%s). Choose between\n%s' % 
-              (y_axis_feature, ', '.join(training_data_dict['output_features'])))
+              (y_axis_feature, ', '.join(training_data_dict['network_args']['output_features'])))
         return 
         
-    if x_axis_feature in training_data_dict['output_features']:
+    if x_axis_feature in training_data_dict['network_args']['output_features']:
         x_label = 'log(DNN$[{}])$'.format(unit_dict[x_axis_feature])
 
-        x_feat_index = training_data_dict['output_features'].index(x_axis_feature)
+        x_feat_index = training_data_dict['network_args']['output_features'].index(x_axis_feature)
         if supervised_pso:
             x_data = training_data_dict['y_{}'.format(data_type)]
         else:
             
             x_data = np.zeros(shape=(len(training_data_dict['output_{}_dict'.format(data_type)][x_axis_feature]), 
-                                     len(training_data_dict['output_features'])))
-            for i_feat, output_feat in enumerate(training_data_dict['output_features']):
+                                     len(training_data_dict['network_args']['output_features'])))
+            for i_feat, output_feat in enumerate(training_data_dict['network_args']['output_features']):
                 x_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
             
         # rescale data
@@ -892,7 +892,7 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
         x_data = training_data_dict['original_halo_masses_{}'.format(data_type)][:n_points]
         x_label = 'log(Emerge$[{}])$'.format(unit_dict[x_axis_feature])
         
-    y_feat_index = training_data_dict['output_features'].index(y_axis_feature)
+    y_feat_index = training_data_dict['network_args']['output_features'].index(y_axis_feature)
     
     if predicted_points is None:
         predicted_points = predict_points(model, training_data_dict, data_type=data_type, original_units=True)
@@ -905,8 +905,8 @@ def get_real_vs_pred_same_fig(model, training_data_dict, x_axis_feature, y_axis_
                                          back_to_original=True, conv_values=training_data_dict['conv_values_output'])
     else:
         true_y_data = np.zeros(shape=(len(training_data_dict['output_{}_dict'.format(data_type)][y_axis_feature]), 
-                                      len(training_data_dict['output_features'])))
-        for i_feat, output_feat in enumerate(training_data_dict['output_features']):
+                                      len(training_data_dict['network_args']['output_features'])))
+        for i_feat, output_feat in enumerate(training_data_dict['network_args']['output_features']):
             true_y_data[:, i_feat] = training_data_dict['output_{}_dict'.format(data_type)][output_feat]
         if training_data_dict['norm']['output'] != 'none':
             true_y_data = convert_units(true_y_data, training_data_dict['norm']['output'], 

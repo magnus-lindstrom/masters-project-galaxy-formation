@@ -37,7 +37,7 @@ def get_unit_dict():
     
     return unit_dict
 
-def divide_train_data(galaxies, data_keys, input_features, output_features, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
+def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
                       total_set_size=0, train_frac=0, val_frac=0, test_frac=0, pso=False, emerge_targets=False, 
                       real_observations=False, mock_observations=False, h_0=.6781):
     
@@ -56,16 +56,16 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
     val_indices = subset_indices[int(train_size) : int(train_size+val_size)]
     test_indices = subset_indices[int(train_size+val_size) :]
 
-    x_train = np.zeros((len(train_indices), len(input_features)))
-    x_val = np.zeros((len(val_indices), len(input_features)))
-    x_test = np.zeros((len(test_indices), len(input_features)))
+    x_train = np.zeros((len(train_indices), len(network_args['input_features'])))
+    x_val = np.zeros((len(val_indices), len(network_args['input_features'])))
+    x_test = np.zeros((len(test_indices), len(network_args['input_features'])))
     
     data_redshifts = {}
     
-    for i in range(len(input_features)):
-        x_train[:,i] = galaxies[train_indices, data_keys[input_features[i]]]
-        x_val[:,i] = galaxies[val_indices, data_keys[input_features[i]]]
-        x_test[:,i] = galaxies[test_indices, data_keys[input_features[i]]]
+    for i in range(len(network_args['input_features'])):
+        x_train[:,i] = galaxies[train_indices, data_keys[network_args['input_features'][i]]]
+        x_val[:,i] = galaxies[val_indices, data_keys[network_args['input_features'][i]]]
+        x_test[:,i] = galaxies[test_indices, data_keys[network_args['input_features'][i]]]
 
     data_redshifts['train_data'] = galaxies[train_indices, data_keys['Redshift']]
     data_redshifts['val_data'] = galaxies[val_indices, data_keys['Redshift']]
@@ -87,10 +87,8 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         test_frac_of_tot_by_redshift.append(
             np.sum(galaxies[test_indices, data_keys['Redshift']] == redshift) / original_nr_data_points_by_redshift[-1]
         )
-    
+        
     training_data_dict = {
-        'output_features': output_features,
-        'input_features': input_features,
         'x_train': x_train,
         'x_val': x_val,
         'x_test': x_test,
@@ -111,25 +109,26 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
         'val_frac_of_tot_by_redshift': val_frac_of_tot_by_redshift,
         'test_frac_of_tot_by_redshift': test_frac_of_tot_by_redshift,
         'unique_redshifts': redshifts,
-        'data_redshifts': data_redshifts
+        'data_redshifts': data_redshifts,
+        'network_args': network_args
     }
     
     if emerge_targets:
         
-        y_train = np.zeros((len(train_indices), len(output_features)))
-        y_val = np.zeros((len(val_indices), len(output_features)))
-        y_test = np.zeros((len(test_indices), len(output_features)))
+        y_train = np.zeros((len(train_indices), len(network_args['output_features'])))
+        y_val = np.zeros((len(val_indices), len(network_args['output_features'])))
+        y_test = np.zeros((len(test_indices), len(network_args['output_features'])))
         
-        for i in range(len(output_features)):
-            y_train[:,i] = galaxies[train_indices, data_keys[output_features[i]]]
-            y_val[:,i] = galaxies[val_indices, data_keys[output_features[i]]]
-            y_test[:,i] = galaxies[test_indices, data_keys[output_features[i]]]
+        for i in range(len(network_args['output_features'])):
+            y_train[:,i] = galaxies[train_indices, data_keys[network_args['output_features'][i]]]
+            y_val[:,i] = galaxies[val_indices, data_keys[network_args['output_features'][i]]]
+            y_test[:,i] = galaxies[test_indices, data_keys[network_args['output_features'][i]]]
             
         training_data_dict['y_train'] = y_train
         training_data_dict['y_val'] = y_val
         training_data_dict['y_test'] = y_test
         
-        train_weights, val_weights, test_weights = get_weights(training_data_dict, output_features, outputs_to_weigh, 
+        train_weights, val_weights, test_weights = get_weights(training_data_dict, network_args['output_features'], outputs_to_weigh, 
                                                                weigh_by_redshift, pso=pso)
         training_data_dict['train_weights'] = train_weights
         training_data_dict['val_weights'] = val_weights
@@ -140,314 +139,12 @@ def divide_train_data(galaxies, data_keys, input_features, output_features, reds
     del training_data_dict["original_halo_masses_test"]
     
     if real_observations:
-        data_path = '/home/magnus/data/observational_data/all_data.h5'
-        file = h5py.File(data_path, 'r')
-        universe_0 = file['Universe_0']
         
-        max_redshift = np.max(redshifts)
-        min_redshift = np.min(redshifts)
-        min_scalefactor = 1 / (1 + max_redshift)
-        max_scalefactor = 1 / (1 + min_redshift)
-        
-        # Get the SMF object from the universe
-        smf = universe_0['SMF']
-        data = smf['Data']
-        sets = smf['Sets']
-        data_keys = list(data.keys())
-        
-        real_smf_data = {
-            'surveys': [],
-            'scale_factor': [],
-            'scale_factor_range': [], # the scale factor interval covered by a data point
-            'binning_feat': [],
-            'smf': [],
-            'errors': []
-        }
-
-        for i_key, key in enumerate(list(data)):
-            data_scalefactor = data[key][0][3]
-            if data_scalefactor > min_scalefactor and data_scalefactor < max_scalefactor:
-                real_smf_data['surveys'].append(key)
-                real_smf_data['scale_factor'].extend([list(point)[3] for point in list(data[key])])
-                real_smf_data['scale_factor_range'].extend([[1 / (1 + list(sets)[i_key][3]), 1 / (1 + list(sets)[i_key][2])]] 
-                                                           * len(list(data[key])))        
-                real_smf_data['binning_feat'].extend([list(point)[0] for point in list(data[key])])
-                real_smf_data['smf'].extend([list(point)[1] for point in list(data[key])])
-                real_smf_data['errors'].extend([list(point)[2] for point in list(data[key])])
-                
-        surveys_covering_redshifts = []
-        for redshift in redshifts:
-            redshift_surveys = []
-            for sett in list(sets):
-                if redshift >= sett[2] and redshift <= sett[3]:
-                    redshift_surveys.append(sett[-1])
-            surveys_covering_redshifts.append(redshift_surveys)
-        real_smf_data['surveys_covering_redshifts'] = surveys_covering_redshifts
-                
-        training_data_dict['real_smf_data'] = real_smf_data
-                
-        # Get the sSFR object from the universe
-        ssfr = universe_0['SSFR']
-        data = ssfr['Data']
-        sets = ssfr['Sets']
-        data_keys = list(data.keys())
-        
-        real_ssfr_data = {
-            'surveys': [],
-            'scale_factor': [],
-            'binning_feat': [],
-            'ssfr': [],
-            'errors': []
-        }
-        
-        for i_key, key in enumerate(list(data)):
-            for data_point in list(data[key]):
-                redshift = data_point[0]
-                scale_factor = 1 / (1 + redshift)
-
-                if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:
-                    if list(sets)[i_key][-1] not in real_ssfr_data['surveys']:
-                        real_ssfr_data['surveys'].append(list(sets)[i_key][-1])
-                    real_ssfr_data['scale_factor'].append(scale_factor)
-                    real_ssfr_data['binning_feat'].append(data_point[3])
-                    real_ssfr_data['ssfr'].append(data_point[1])
-                    real_ssfr_data['errors'].append(data_point[2])        
-        
-        training_data_dict['real_ssfr_data'] = real_ssfr_data
-
-                    
-        # Get the FQ object from the universe
-        fq = universe_0['FQ']
-        data = fq['Data']
-        sets = fq['Sets']
-        data_keys = list(data.keys())
-        
-        real_fq_data = {
-            'surveys': [],
-            'scale_factor': [],
-            'scale_factor_range': [],
-            'binning_feat': [],
-            'fq': [],
-            'errors': []
-        }
-
-        for i_key, key in enumerate(list(data)):
-            scale_factor = data[key][0][3]
-
-            if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:
-                real_fq_data['surveys'].append(list(sets)[i_key][-1])
-                real_fq_data['scale_factor'].extend([list(point)[3] for point in list(data[key])])
-                real_fq_data['scale_factor_range'].extend([[1 / (1 + list(sets)[i_key][3]), 1 / (1 + list(sets)[i_key][2])]] 
-                                                           * len(list(data[key])))
-                real_fq_data['binning_feat'].extend([list(point)[0] for point in list(data[key])])
-                real_fq_data['fq'].extend([list(point)[1] for point in list(data[key])])
-                real_fq_data['errors'].extend([list(point)[2] for point in list(data[key])])
-                
-        surveys_covering_redshifts = []
-        for redshift in redshifts:
-            redshift_surveys = []
-            for sett in list(sets):
-                if redshift >= sett[2] and redshift <= sett[3]:
-                    redshift_surveys.append(sett[-1])
-            surveys_covering_redshifts.append(redshift_surveys)
-        real_fq_data['surveys_covering_redshifts'] = surveys_covering_redshifts
-        
-        training_data_dict['real_fq_data'] = real_fq_data
-        
-        # Get the CSFRD object from the universe
-        csfrd = universe_0['CSFRD']
-        data = csfrd['Data']
-        sets = csfrd['Sets']
-        data_keys = list(data.keys())
-
-        real_csfrd_data = {
-            'surveys': [],
-            'scale_factor': [],
-            'csfrd': [],
-            'errors': []
-        }
-
-        for i_key, key in enumerate(list(data)):
-
-            for data_point in list(data[key]):
-                redshift = data_point[0]
-                scale_factor = 1 / (1 + redshift)
-
-                if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:
-                    if key not in real_csfrd_data['surveys']:
-                        real_csfrd_data['surveys'].append(key)
-                    real_csfrd_data['scale_factor'].append(scale_factor)
-                    real_csfrd_data['csfrd'].append(data_point[1])
-                    real_csfrd_data['errors'].append(data_point[2])
-        training_data_dict['real_csfrd_data'] = real_csfrd_data
-        
-        # Get the clustering object from the universe
-        clustering = universe_0['Clustering']
-        data = clustering['Data']
-        sets = clustering['Sets']
-        data_keys = list(data.keys())
-            
-        real_clustering_data = {
-            'surveys': [],
-            'redshift': 0.08, # the only data we have is at redshift 0.08
-            'stellar_mass_bin_edges': [],
-            'pi_max': None,
-            'rp_bin_edges': None,
-            'wp': [],
-            'errors': []
-        }
-        clust_bin_mids = None # will temporarily contain the midpoints of the rp bins
-        for i_key, key in enumerate(list(data)):
-
-            if list(sets)[i_key][-1] not in real_clustering_data['surveys']:
-                real_clustering_data['surveys'].append(list(sets)[i_key][-1])
-            if i_key == 0:
-                real_clustering_data['stellar_mass_bin_edges'].extend([list(sets)[i_key][2], list(sets)[i_key][3]])
-            else:
-                real_clustering_data['stellar_mass_bin_edges'].append(list(sets)[i_key][3])
-            if real_clustering_data['pi_max'] is None:
-                real_clustering_data['pi_max'] = list(sets)[i_key][-2] * h_0 # units are now in Mpc/h
-            if clust_bin_mids is None:
-                clust_bin_mids = np.array([list(point)[0] for point in list(data[key])]) * h_0 # units are now in Mpc/h
-            real_clustering_data['wp'].append([list(point)[1] * h_0 for point in list(data[key])]) # units are now in Mpc/h
-            real_clustering_data['errors'].append([list(point)[2] * h_0 for point in list(data[key])]) # units are now in Mpc/h
-
-        clust_bin_mids = np.log10(clust_bin_mids) # units are now in log(Mpc/h)
-
-        real_clustering_data['rp_bin_edges'] = (clust_bin_mids[:-1] + clust_bin_mids[1:]) / 2
-        real_clustering_data['rp_bin_edges'] = np.insert(
-            real_clustering_data['rp_bin_edges'], 
-            0, 
-            clust_bin_mids[0] - (real_clustering_data['rp_bin_edges'][0] - clust_bin_mids[0])
-        )
-        real_clustering_data['rp_bin_edges'] = np.append(
-            real_clustering_data['rp_bin_edges'], 
-            clust_bin_mids[-1] + (clust_bin_mids[-1] - real_clustering_data['rp_bin_edges'][-1])
-        )
-        real_clustering_data['rp_bin_edges'] = np.power(10, real_clustering_data['rp_bin_edges']) # back to Mpc/h
-            
-        training_data_dict['real_clustering_data'] = real_clustering_data
+        training_data_dict = add_obs_data(training_data_dict, h_0, real_obs=True)
         
     if mock_observations:
         
-        # store the relevant SSFR data
-        ssfr_directory = '/home/magnus/data/mock_data/ssfr/'
-        ssfr_data = {}
-        for redshift in training_data_dict['unique_redshifts']:
-
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(ssfr_directory + file_name + '.json', 'r') as f:
-                ssfr = json.load(f)
-
-            parameter_dict = ssfr.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-
-            bin_centers = [item[0] for item in ssfr]
-            mean_ssfr = [item[1] for item in ssfr]
-            errors = [item[2] for item in ssfr]
-
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'ssfr': np.array(mean_ssfr),
-                'errors': np.array(errors)
-            }
-
-            ssfr_data['{:.1f}'.format(redshift)] = redshift_data
-
-        training_data_dict['ssfr_data'] = ssfr_data
-
-        # store the relevant SMF data
-        smf_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
-        smf_data = {}
-
-        for redshift in training_data_dict['unique_redshifts']:
-
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(smf_directory + file_name + '.json', 'r') as f:
-                smf_list = json.load(f)
-
-            parameter_dict = smf_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-
-            bin_centers = [item[0] for item in smf_list]
-            smf = [item[1] for item in smf_list]
-            errors = [item[2] for item in smf_list]
-
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'smf': np.array(smf),
-                'errors': np.array(errors)
-            }
-
-            smf_data['{:.1f}'.format(redshift)] = redshift_data
-
-        training_data_dict['smf_data'] = smf_data
-
-        # store the relevant FQ data
-        fq_directory = '/home/magnus/data/mock_data/fq/'
-        fq_data = {}
-
-        for redshift in training_data_dict['unique_redshifts']:
-
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(fq_directory + file_name + '.json', 'r') as f:
-                fq_list = json.load(f)
-
-            parameter_dict = fq_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-
-            bin_centers = [item[0] for item in fq_list]
-            fq = [item[1] for item in fq_list]
-            errors = [item[2] for item in fq_list]
-
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'fq': np.array(fq),
-                'errors': np.array(errors)
-            }
-
-            fq_data['{:.1f}'.format(redshift)] = redshift_data
-
-        training_data_dict['fq_data'] = fq_data
-
-        # store the relevant SHM data
-        shm_directory = '/home/magnus/data/mock_data/stellar_halo_mass_relations/'
-        shm_data = {}
-
-        for redshift in training_data_dict['unique_redshifts']:
-
-            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
-            with open(shm_directory + file_name + '.json', 'r') as f:
-                shm_list = json.load(f)
-
-            parameter_dict = shm_list.pop(0)
-            bin_widths = parameter_dict['bin_widths']
-            bin_edges = parameter_dict['bin_edges']
-
-            bin_centers = [item[0] for item in shm_list]
-            shm = [item[1] for item in shm_list]
-            errors = [item[2] for item in shm_list]
-
-            redshift_data = {
-                'bin_centers': np.array(bin_centers),
-                'bin_widths': np.array(bin_widths),
-                'bin_edges': np.array(bin_edges),
-                'shm': np.array(shm),
-                'errors': np.array(errors)
-            }
-
-            shm_data['{:.1f}'.format(redshift)] = redshift_data
-
-        training_data_dict['shm_data'] = shm_data
+        training_data_dict = add_obs_data(training_data_dict, h_0, mock_obs=True)
     
     return training_data_dict
 
@@ -602,7 +299,7 @@ def normalise_data(training_data_dict, norm, pso=False):
 
         if not pso:       # if trained with backpropagation
 
-            for i_feat, feat in enumerate(training_data_dict['output_features']):
+            for i_feat, feat in enumerate(training_data_dict['network_args']['output_features']):
                 output_train_dict[feat] = y_train_norm[:, i_feat]
                 output_val_dict[feat] = y_val_norm[:, i_feat]
                 output_test_dict[feat] = y_test_norm[:, i_feat]
@@ -617,6 +314,413 @@ def normalise_data(training_data_dict, norm, pso=False):
 
     training_data_dict['norm'] = norm
         
+    return training_data_dict
+
+
+def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=False, validation_fraction=0):
+    
+    if real_obs:
+        
+        data_path = '/home/magnus/data/observational_data/all_data.h5'
+        file = h5py.File(data_path, 'r')
+        universe_0 = file['Universe_0']
+        
+        max_redshift = np.max(training_data_dict['unique_redshifts'])
+        min_redshift = np.min(training_data_dict['unique_redshifts'])
+        min_scalefactor = 1 / (1 + max_redshift)
+        max_scalefactor = 1 / (1 + min_redshift)
+        
+        # Get the SMF object from the universe
+        smf = universe_0['SMF']
+        data = smf['Data']
+        sets = smf['Sets']
+        data_keys = list(data.keys())
+        
+        real_smf_data = {'train': None, 'val': None}
+        real_smf_data['train'] = {
+            'surveys': [],
+            'scale_factor': [],
+            'scale_factor_range': [], # the scale factor interval covered by a data point
+            'binning_feat': [],
+            'smf': [],
+            'errors': []
+        }
+        if validation_fraction > 0:
+            real_smf_data['val'] = {
+                'surveys': [],
+                'scale_factor': [],
+                'scale_factor_range': [], # the scale factor interval covered by a data point
+                'binning_feat': [],
+                'smf': [],
+                'errors': []
+            }
+
+        for i_key, key in enumerate(list(data)):
+            data_scalefactor = data[key][0][3]
+            if data_scalefactor > min_scalefactor and data_scalefactor < max_scalefactor:
+                real_smf_data['train']['surveys'].append(key)
+                real_smf_data['train']['scale_factor'].extend([list(point)[3] for point in list(data[key])])
+                real_smf_data['train']['scale_factor_range'].extend([[1 / (1 + list(sets)[i_key][3]), 
+                                                                       1 / (1 + list(sets)[i_key][2])]] * len(list(data[key])))        
+                real_smf_data['train']['binning_feat'].extend([list(point)[0] for point in list(data[key])])
+                real_smf_data['train']['smf'].extend([list(point)[1] for point in list(data[key])])
+                real_smf_data['train']['errors'].extend([list(point)[2] for point in list(data[key])])
+                
+        surveys_covering_redshifts = []
+        for redshift in training_data_dict['unique_redshifts']:
+            redshift_surveys = []
+            for sett in list(sets):
+                if redshift >= sett[2] and redshift <= sett[3]:
+                    redshift_surveys.append(sett[-1])
+            surveys_covering_redshifts.append(redshift_surveys)
+        real_smf_data['surveys_covering_redshifts'] = surveys_covering_redshifts
+                
+        training_data_dict['real_smf_data'] = real_smf_data
+                
+        # Get the sSFR object from the universe
+        ssfr = universe_0['SSFR']
+        data = ssfr['Data']
+        sets = ssfr['Sets']
+        data_keys = list(data.keys())
+        
+        real_ssfr_data = {'train': None, 'val': None}
+        real_ssfr_data['train'] = {
+            'surveys': [],
+            'scale_factor': [],
+            'binning_feat': [],
+            'ssfr': [],
+            'errors': []
+        }
+        if validation_fraction > 0:
+            real_ssfr_data['val'] = {
+                'surveys': [],
+                'scale_factor': [],
+                'binning_feat': [],
+                'ssfr': [],
+                'errors': []
+            }
+        
+        for i_key, key in enumerate(list(data)):
+            for data_point in list(data[key]):
+                redshift = data_point[0]
+                scale_factor = 1 / (1 + redshift)
+
+                if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:                    
+                    if list(sets)[i_key][-1] not in real_ssfr_data['train']['surveys']:
+                        real_ssfr_data['train']['surveys'].append(list(sets)[i_key][-1])
+                    real_ssfr_data['train']['scale_factor'].append(scale_factor)
+                    real_ssfr_data['train']['binning_feat'].append(data_point[3])
+                    real_ssfr_data['train']['ssfr'].append(data_point[1])
+                    real_ssfr_data['train']['errors'].append(data_point[2])        
+        
+        training_data_dict['real_ssfr_data'] = real_ssfr_data
+
+                    
+        # Get the FQ object from the universe
+        fq = universe_0['FQ']
+        data = fq['Data']
+        sets = fq['Sets']
+        data_keys = list(data.keys())
+        
+        real_fq_data = {'train': None, 'val': None}
+        real_fq_data['train'] = {
+            'surveys': [],
+            'scale_factor': [],
+            'scale_factor_range': [],
+            'binning_feat': [],
+            'fq': [],
+            'errors': []
+        }
+        if validation_fraction > 0:
+            real_fq_data['val'] = {
+                'surveys': [],
+                'scale_factor': [],
+                'scale_factor_range': [],
+                'binning_feat': [],
+                'fq': [],
+                'errors': []
+            }
+
+        for i_key, key in enumerate(list(data)):
+            scale_factor = data[key][0][3]
+
+            if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:
+                
+                real_fq_data['train']['surveys'].append(list(sets)[i_key][-1])
+                real_fq_data['train']['scale_factor'].extend([list(point)[3] for point in list(data[key])])
+                real_fq_data['train']['scale_factor_range'].extend([[1 / (1 + list(sets)[i_key][3]), 1 / (1 + list(sets)[i_key][2])]] 
+                                                           * len(list(data[key])))
+                real_fq_data['train']['binning_feat'].extend([list(point)[0] for point in list(data[key])])
+                real_fq_data['train']['fq'].extend([list(point)[1] for point in list(data[key])])
+                real_fq_data['train']['errors'].extend([list(point)[2] for point in list(data[key])])
+                
+        surveys_covering_redshifts = []
+        for redshift in training_data_dict['unique_redshifts']:
+            redshift_surveys = []
+            for sett in list(sets):
+                if redshift >= sett[2] and redshift <= sett[3]:
+                    redshift_surveys.append(sett[-1])
+            surveys_covering_redshifts.append(redshift_surveys)
+        real_fq_data['surveys_covering_redshifts'] = surveys_covering_redshifts
+        
+        training_data_dict['real_fq_data'] = real_fq_data
+        
+        # Get the CSFRD object from the universe
+        csfrd = universe_0['CSFRD']
+        data = csfrd['Data']
+        sets = csfrd['Sets']
+        data_keys = list(data.keys())
+
+        real_csfrd_data = {'train': None, 'val': None}
+        real_csfrd_data['train'] = {
+            'surveys': [],
+            'scale_factor': [],
+            'csfrd': [],
+            'errors': []
+        }
+        if validation_fraction > 0:
+            real_csfrd_data['val'] = {
+                'surveys': [],
+                'scale_factor': [],
+                'csfrd': [],
+                'errors': []
+            }
+
+        for i_key, key in enumerate(list(data)):
+
+            for data_point in list(data[key]):
+                redshift = data_point[0]
+                scale_factor = 1 / (1 + redshift)
+
+                if scale_factor >= min_scalefactor and scale_factor <= max_scalefactor:
+                    if key not in real_csfrd_data['train']['surveys']:
+                        real_csfrd_data['train']['surveys'].append(key)
+                    real_csfrd_data['train']['scale_factor'].append(scale_factor) # todo: place the surveys on the same level as train and val
+                    real_csfrd_data['train']['csfrd'].append(data_point[1])
+                    real_csfrd_data['train']['errors'].append(data_point[2])
+                    
+        training_data_dict['real_csfrd_data'] = real_csfrd_data
+        
+        # Get the clustering object from the universe
+        clustering = universe_0['Clustering']
+        data = clustering['Data']
+        sets = clustering['Sets']
+        data_keys = list(data.keys())
+            
+        real_clustering_data = {'train': None, 'val': None}
+        real_clustering_data['train'] = {
+            'surveys': [],
+            'redshift': 0.08, # the only data we have is at redshift 0.08
+            'stellar_mass_bin_edges': [],
+            'pi_max': None,
+            'rp_bin_edges': None,
+            'wp': [],
+            'errors': []
+        }
+        if validation_fraction > 0:
+            real_clustering_data['val'] = {
+                'surveys': [],
+                'redshift': 0.08, # the only data we have is at redshift 0.08
+                'stellar_mass_bin_edges': [],
+                'pi_max': None,
+                'rp_bin_edges': None,
+                'wp': [],
+                'errors': []
+            }
+        clust_bin_mids = None # will temporarily contain the midpoints of the rp bins
+        for i_key, key in enumerate(list(data)):
+
+            if list(sets)[i_key][-1] not in real_clustering_data['train']['surveys']:
+                real_clustering_data['train']['surveys'].append(list(sets)[i_key][-1])
+            if i_key == 0:
+                real_clustering_data['train']['stellar_mass_bin_edges'].extend([list(sets)[i_key][2], list(sets)[i_key][3]])
+            else:
+                real_clustering_data['train']['stellar_mass_bin_edges'].append(list(sets)[i_key][3])
+            if real_clustering_data['train']['pi_max'] is None:
+                real_clustering_data['train']['pi_max'] = list(sets)[i_key][-2] * h_0 # units are now in Mpc/h
+            if clust_bin_mids is None:
+                clust_bin_mids = np.array([list(point)[0] for point in list(data[key])]) * h_0 # units are now in Mpc/h
+            real_clustering_data['train']['wp'].append([list(point)[1] * h_0 for point in list(data[key])]) # units are now in Mpc/h
+            real_clustering_data['train']['errors'].append([list(point)[2] * h_0 for point in list(data[key])]) # Mpc/h
+
+        clust_bin_mids = np.log10(clust_bin_mids) # units are now in log(Mpc/h)
+
+        real_clustering_data['train']['rp_bin_edges'] = (clust_bin_mids[:-1] + clust_bin_mids[1:]) / 2
+        real_clustering_data['train']['rp_bin_edges'] = np.insert(
+            real_clustering_data['train']['rp_bin_edges'], 
+            0, 
+            clust_bin_mids[0] - (real_clustering_data['train']['rp_bin_edges'][0] - clust_bin_mids[0])
+        )
+        real_clustering_data['train']['rp_bin_edges'] = np.append(
+            real_clustering_data['train']['rp_bin_edges'], 
+            clust_bin_mids[-1] + (clust_bin_mids[-1] - real_clustering_data['train']['rp_bin_edges'][-1])
+        )
+        real_clustering_data['train']['rp_bin_edges'] = np.power(10, real_clustering_data['train']['rp_bin_edges']) # back to Mpc/h
+        
+        #  move over some of the obs data points to the validation set, if the frac is larger than one
+        if validation_fraction > 0:
+            pass
+            
+        training_data_dict['real_clustering_data'] = real_clustering_data
+        
+    if mock_observations:
+        
+        # store the relevant SSFR data
+        ssfr_directory = '/home/magnus/data/mock_data/ssfr/'
+        ssfr_data = {}
+        for redshift in training_data_dict['unique_redshifts']:
+
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(ssfr_directory + file_name + '.json', 'r') as f:
+                ssfr = json.load(f)
+
+            parameter_dict = ssfr.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            bin_edges = parameter_dict['bin_edges']
+
+            bin_centers = [item[0] for item in ssfr]
+            mean_ssfr = [item[1] for item in ssfr]
+            errors = [item[2] for item in ssfr]
+
+            redshift_data = {
+                'bin_centers': np.array(bin_centers),
+                'bin_widths': np.array(bin_widths),
+                'bin_edges': np.array(bin_edges),
+                'ssfr': np.array(mean_ssfr),
+                'errors': np.array(errors)
+            }
+
+            ssfr_data['{:.1f}'.format(redshift)] = redshift_data
+
+        training_data_dict['ssfr_data'] = ssfr_data
+
+        # store the relevant SMF data
+        smf_directory = '/home/magnus/data/mock_data/stellar_mass_functions/'
+        smf_data = {}
+
+        for redshift in training_data_dict['unique_redshifts']:
+
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(smf_directory + file_name + '.json', 'r') as f:
+                smf_list = json.load(f)
+
+            parameter_dict = smf_list.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            bin_edges = parameter_dict['bin_edges']
+
+            bin_centers = [item[0] for item in smf_list]
+            smf = [item[1] for item in smf_list]
+            errors = [item[2] for item in smf_list]
+
+            redshift_data = {
+                'bin_centers': np.array(bin_centers),
+                'bin_widths': np.array(bin_widths),
+                'bin_edges': np.array(bin_edges),
+                'smf': np.array(smf),
+                'errors': np.array(errors)
+            }
+
+            smf_data['{:.1f}'.format(redshift)] = redshift_data
+
+        training_data_dict['smf_data'] = smf_data
+
+        # store the relevant FQ data
+        fq_directory = '/home/magnus/data/mock_data/fq/'
+        fq_data = {}
+
+        for redshift in training_data_dict['unique_redshifts']:
+
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(fq_directory + file_name + '.json', 'r') as f:
+                fq_list = json.load(f)
+
+            parameter_dict = fq_list.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            bin_edges = parameter_dict['bin_edges']
+
+            bin_centers = [item[0] for item in fq_list]
+            fq = [item[1] for item in fq_list]
+            errors = [item[2] for item in fq_list]
+
+            redshift_data = {
+                'bin_centers': np.array(bin_centers),
+                'bin_widths': np.array(bin_widths),
+                'bin_edges': np.array(bin_edges),
+                'fq': np.array(fq),
+                'errors': np.array(errors)
+            }
+
+            fq_data['{:.1f}'.format(redshift)] = redshift_data
+
+        training_data_dict['fq_data'] = fq_data
+
+        # store the relevant SHM data
+        shm_directory = '/home/magnus/data/mock_data/stellar_halo_mass_relations/'
+        shm_data = {}
+
+        for redshift in training_data_dict['unique_redshifts']:
+
+            file_name = 'galaxies.Z{:02.0f}'.format(redshift*10)
+            with open(shm_directory + file_name + '.json', 'r') as f:
+                shm_list = json.load(f)
+
+            parameter_dict = shm_list.pop(0)
+            bin_widths = parameter_dict['bin_widths']
+            bin_edges = parameter_dict['bin_edges']
+
+            bin_centers = [item[0] for item in shm_list]
+            shm = [item[1] for item in shm_list]
+            errors = [item[2] for item in shm_list]
+
+            redshift_data = {
+                'bin_centers': np.array(bin_centers),
+                'bin_widths': np.array(bin_widths),
+                'bin_edges': np.array(bin_edges),
+                'shm': np.array(shm),
+                'errors': np.array(errors)
+            }
+
+            shm_data['{:.1f}'.format(redshift)] = redshift_data
+
+        training_data_dict['shm_data'] = shm_data
+        
+    return training_data_dict
+
+
+def prune_train_data_dict_for_reinf_learn(training_data_dict):
+    
+    del training_data_dict['output_train_dict']
+    del training_data_dict['output_val_dict']
+    del training_data_dict['output_test_dict']
+    
+    training_data_dict['data_coordinates'] = np.vstack((training_data_dict['train_coordinates'], 
+                                                        training_data_dict['val_coordinates'], 
+                                                        training_data_dict['test_coordinates']))
+    del training_data_dict['train_coordinates']
+    del training_data_dict['val_coordinates']
+    del training_data_dict['test_coordinates']
+    
+    training_data_dict['main_input'] = np.vstack((training_data_dict['input_train_dict']['main_input'], 
+                                                  training_data_dict['input_val_dict']['main_input'], 
+                                                  training_data_dict['input_test_dict']['main_input']))
+    del training_data_dict['input_train_dict']
+    del training_data_dict['input_val_dict']
+    del training_data_dict['input_test_dict']
+    
+    training_data_dict['data_redshifts'] = np.concatenate((training_data_dict['data_redshifts']['train_data'], 
+                                                          training_data_dict['data_redshifts']['val_data'], 
+                                                          training_data_dict['data_redshifts']['test_data']))
+    
+    training_data_dict['frac_of_total_points_by_redshift'] = (
+        training_data_dict['train_frac_of_tot_by_redshift'] 
+        + training_data_dict['val_frac_of_tot_by_redshift']
+        + training_data_dict['test_frac_of_tot_by_redshift']
+    )
+    
+    del training_data_dict['train_frac_of_tot_by_redshift']
+    del training_data_dict['val_frac_of_tot_by_redshift']
+    del training_data_dict['test_frac_of_tot_by_redshift']
+    
     return training_data_dict
 
 
@@ -637,8 +741,11 @@ def get_test_score(model, training_data_dict, norm):
 
 
 def predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type='test'):
-
-    predicted_norm_points = model.predict(training_data_dict['input_{}_dict'.format(data_type)])
+    
+    if 'main_input' in training_data_dict:
+        predicted_norm_points = model.predict(training_data_dict['main_input'.format(data_type)])
+    else:
+        predicted_norm_points = model.predict(training_data_dict['input_{}_dict'.format(data_type)])
     
     if type(predicted_norm_points) is list:
         predicted_norm_points = np.asarray(predicted_norm_points)
@@ -961,7 +1068,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
         
         for i, (i_red, redshift) in enumerate(zip(evaluated_redshift_indeces, evaluated_redshifts)):
 
-            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+            relevant_inds = training_data_dict['data_redshifts'] == redshift
                         
             bin_means, bin_edges, bin_numbers = binned_statistic(binning_feat[relevant_inds], bin_feat[relevant_inds], 
                                                bins=loss_dict['nr_bins_real_obs'], statistic='mean')
@@ -978,7 +1085,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
                 pred_bin_feat_dist = bin_counts / 200**3 / bin_widths
 
                 # since we might only be using a subset of the original data points, compensate for this
-                pred_bin_feat_dist /= training_data_dict['{}_frac_of_tot_by_redshift'.format(data_type)][i]
+                pred_bin_feat_dist /= training_data_dict['frac_of_total_points_by_redshift'.format(data_type)][i]
 
                 pred_bin_feat_dist = np.log10(pred_bin_feat_dist)
 
@@ -1022,13 +1129,14 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
                     warnings.simplefilter("ignore")
                     spline = SmoothBivariateSpline(binning_feat_values_pred_points, scale_factor_of_pred_points, pred_bin_feat)
         #             print('spline: ', spline)
-                    print('hej')
-                    pred_observations = spline.ev(training_data_dict['real_{}_data'.format(bin_feat_name)]['binning_feat'],
-                                                  training_data_dict['real_{}_data'.format(bin_feat_name)]['scale_factor'])
-#             print('pred_observations: ', pred_observations)
+                    pred_observations = spline.ev(
+                        training_data_dict['real_{}_data'.format(bin_feat_name)][data_type]['binning_feat'],
+                        training_data_dict['real_{}_data'.format(bin_feat_name)][data_type]['scale_factor']
+                    )
 
-            loss = chi_squared_loss(pred_observations, training_data_dict['real_{}_data'.format(bin_feat_name)][bin_feat_name], 
-                                    training_data_dict['real_{}_data'.format(bin_feat_name)]['errors'])
+            loss = chi_squared_loss(pred_observations, 
+                                    training_data_dict['real_{}_data'.format(bin_feat_name)][data_type][bin_feat_name], 
+                                    training_data_dict['real_{}_data'.format(bin_feat_name)][data_type]['errors'])
 #             print('size of {} loss: '.format(bin_feat_name), loss)
 
         else:
@@ -1411,8 +1519,8 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
     if real_obs:
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
             
-        sfr_index = training_data_dict['output_features'].index('SFR')
-        stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
         predicted_sfr_log = y_pred[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
@@ -1491,8 +1599,8 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
         y_pred = predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
 #         else
             
-        sfr_index = training_data_dict['output_features'].index('SFR')
-        stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
         predicted_sfr_log = y_pred[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
@@ -1573,8 +1681,8 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, csfrd_only=False, 
         
         y_pred = predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
         
-        sfr_index = training_data_dict['output_features'].index('SFR')
-        stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
         predicted_sfr_log = y_pred[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
@@ -1653,8 +1761,8 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, csfrd_only=False, 
         
         y_pred = predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
         
-        sfr_index = training_data_dict['output_features'].index('SFR')
-        stellar_mass_index = training_data_dict['output_features'].index('Stellar_mass')
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
         predicted_sfr_log = y_pred[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15

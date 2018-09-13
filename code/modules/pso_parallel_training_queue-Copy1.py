@@ -18,41 +18,39 @@ from plotting import get_real_obs_plot, get_smf_ssfr_fq_plot_mock_obs
 
 class Feed_Forward_Neural_Network():
     
-    def __init__(self, network_name, training_data_dict, reinf_learning=True, real_observations=True, 
-                 nr_processes=30, start_from_pretrained_net=False, pretrained_net_name=None, pso_args={}, network_args={}):
+    def __init__(self, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
+                 activation_function, output_activation, reg_strength, network_name):
         
+        self.nr_hidden_layers = nr_hidden_layers
+        self.nr_neurons_per_lay = nr_neurons_per_lay
+        self.input_features = input_features
+        self.output_features = output_features
+        self.activation_function = activation_function
+        self.output_activation = output_activation
+        self.reg_strength = reg_strength
         self.name = network_name
+                
+    def setup_pso(self, pso_param_dict={}, reinf_learning=True, real_observations=True, nr_processes=30, 
+                  start_from_pretrained_net=False, pretrained_net_name=None):
         
-        if start_from_pretrained_net:
-            network_args = training_data_dict['network_args']
-        
-        self.nr_hidden_layers = network_args['nr_hidden_layers']
-        self.nr_neurons_per_lay = network_args['nr_neurons_per_lay']
-        self.input_features = network_args['input_features']
-        self.output_features = network_args['output_features']
-        self.activation_function = network_args['activation_function']
-        self.output_activation = network_args['output_activation']
-        self.reg_strength = network_args['reg_strength']
-        self.nr_hidden_layers = network_args['nr_hidden_layers']
-            
-        self.pso_swarm = PSO_Swarm(self, training_data_dict, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
+        self.pso_swarm = PSO_Swarm(self, self.nr_hidden_layers, self.nr_neurons_per_lay, self.input_features, 
                                    self.output_features, self.activation_function, self.output_activation,
-                                   pso_args, self.reg_strength, reinf_learning, real_observations, nr_processes,
+                                   pso_param_dict, self.reg_strength, reinf_learning, real_observations, nr_processes,
                                    start_from_pretrained_net, pretrained_net_name)
         
-    def train_pso(self, nr_iterations, speed_check=False, std_penalty=False, verbatim=False, 
+    def train_pso(self, nr_iterations, training_data_dict, speed_check=False, std_penalty=False, verbatim=False, 
                   draw_figures=True, loss_dict=None):
         
-        self.pso_swarm.train_network(nr_iterations, std_penalty, speed_check, verbatim, draw_figures, 
+        self.pso_swarm.train_network(nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figures, 
                                      loss_dict)
         
 
 class PSO_Swarm(Feed_Forward_Neural_Network):
     
-    def __init__(self, parent, training_data_dict, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
-                 activation_function, output_activation, pso_args, reg_strength, reinf_learning, real_observations,
+    def __init__(self, parent, nr_hidden_layers, nr_neurons_per_lay, input_features, output_features, 
+                 activation_function, output_activation, pso_param_dict, reg_strength, reinf_learning, real_observations,
                  nr_processes, start_from_pretrained_net, pretrained_net_name):
-        self.pso_args = {
+        self.pso_param_dict = {
             'nr_particles': 40,
             'xMin': -10,
             'xMax': 10,
@@ -69,16 +67,15 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             'restart_check_interval': 100
         }
     
-        if pso_args is not None:
-            for key in pso_args:
-                if key in self.pso_args:
-                    self.pso_args[key] = pso_args[key]
+        if pso_param_dict is not None:
+            for key in pso_param_dict:
+                if key in self.pso_param_dict:
+                    self.pso_param_dict[key] = pso_param_dict[key]
                 else:
-                    print('\'%s\ is not a valid key. Choose between:' % (key), self.pso_args.keys())
+                    print('\'%s\ is not a valid key. Choose between:' % (key), self.pso_param_dict.keys())
                     break
                     
         self.parent = parent
-        self.training_data_dict = training_data_dict
         self.reinf_learning = reinf_learning
         self.train_on_real_obs = real_observations
         if real_observations:
@@ -123,11 +120,13 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.best_weights_train = None
         self.best_weights_val = None
         
-        self.vMax = (self.pso_args['xMax'] - self.pso_args['xMin']) / self.pso_args['delta_t']
+        self.vMax = (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']) / self.pso_param_dict['delta_t']
                 
-    def train_network(self, nr_iterations, std_penalty, speed_check, verbatim, draw_figs,
+    def train_network(self, nr_iterations, training_data_dict, std_penalty, speed_check, verbatim, draw_figs,
                       loss_dict):
-                
+        
+        self.training_data_dict = training_data_dict
+        
         self.nr_iterations_trained = nr_iterations
         self.std_penalty = std_penalty
         self.verbatim = verbatim
@@ -145,7 +144,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
             process_list = []
             for i in range(self.nr_processes):
-                process = mp.Process(target=particle_evaluator, args=(self.inp_queue, self.results_queue, self.training_data_dict, 
+                process = mp.Process(target=particle_evaluator, args=(self.inp_queue, self.results_queue, training_data_dict, 
                                                                       self.reinf_learning, self.train_on_real_obs, 
                                                                       self.network_args, self.weight_shapes, loss_dict))
                 process_list.append(process)
@@ -156,7 +155,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             if draw_figs:
                 figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.model_path, 
                                                                                self.weight_shapes, self.network_args, 
-                                                                               self.training_data_dict, self.train_on_real_obs,
+                                                                               training_data_dict, self.train_on_real_obs,
                                                                                loss_dict))
                 process_list.append(figure_drawer_process)
             
@@ -167,11 +166,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             while should_start_fresh:
                 should_start_fresh = False
 
-                self.inertia_weight_reduction = np.exp(np.log(self.pso_args['inertia_weight_min'] 
-                                                         / self.pso_args['inertia_weight_start'])
-                                                         / (self.pso_args['exploration_iters'] / nr_iterations)
+                self.inertia_weight_reduction = np.exp(np.log(self.pso_param_dict['inertia_weight_min'] 
+                                                         / self.pso_param_dict['inertia_weight_start'])
+                                                         / (self.pso_param_dict['exploration_iters'] / nr_iterations)
                                                          / nr_iterations)
-                self.inertia_weight = self.pso_args['inertia_weight_start']
+                self.inertia_weight = self.pso_param_dict['inertia_weight_start']
                 
                 self.progress = 0
                 
@@ -211,11 +210,11 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     if int(iteration/10) == iteration/10:
                         self.print_dist_queue.put([self.positions, iteration])
 
-                    for i_particle in range(self.pso_args['nr_particles']):
+                    for i_particle in range(self.pso_param_dict['nr_particles']):
                         self.inp_queue.put([self.positions[i_particle], i_particle, 'train'])
 
-                    particle_scores = np.zeros(self.pso_args['nr_particles'])
-                    for i_particle in range(self.pso_args['nr_particles']):
+                    particle_scores = np.zeros(self.pso_param_dict['nr_particles'])
+                    for i_particle in range(self.pso_param_dict['nr_particles']):
                         
                         score, particle_nr = self.results_queue.get()
                         particle_scores[particle_nr] = score
@@ -337,21 +336,21 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         training_is_done = False
         end_train_message = None
         
-        if self.pso_args['patience_parameter'] == 'val':
-            if self.time_since_val_improvement > self.pso_args['patience']:
+        if self.pso_param_dict['patience_parameter'] == 'val':
+            if self.time_since_val_improvement > self.pso_param_dict['patience']:
                 training_is_done = True
                 end_train_message = 'Early stopping in iteration {}. Max patience for val loss improvement reached ({})'.format(
-                                     iteration, self.pso_args['patience'])
-        elif self.pso_args['patience_parameter'] == 'train':
-            if self.time_since_train_improvement > self.pso_args['patience']:
+                                     iteration, self.pso_param_dict['patience'])
+        elif self.pso_param_dict['patience_parameter'] == 'train':
+            if self.time_since_train_improvement > self.pso_param_dict['patience']:
                 training_is_done = True
                 end_train_message = 'Early stopping in iteration {}. Max patience for train loss improvement reached ({})'.format(
-                                     iteration, self.pso_args['patience'])
+                                     iteration, self.pso_param_dict['patience'])
         
-        if (int(iteration/self.pso_args['restart_check_interval']) == iteration/self.pso_args['restart_check_interval']) \
+        if (int(iteration/self.pso_param_dict['restart_check_interval']) == iteration/self.pso_param_dict['restart_check_interval']) \
             and (iteration > 0):
             
-            should_start_fresh = np.any(self.best_val_stds < self.pso_args['min_std_tol'])
+            should_start_fresh = np.any(self.best_val_stds < self.pso_param_dict['min_std_tol'])
             if should_start_fresh:
                 if self.verbatim:
                     print('Restarting training because of too low predicted feature variance in validation set ({:.2e}).\n'.format(
@@ -376,10 +375,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
     def update_inertia_weight(self, iteration, f):
         
-        isExploring = (self.inertia_weight > self.pso_args['inertia_weight_min'])
+        isExploring = (self.inertia_weight > self.pso_param_dict['inertia_weight_min'])
         if isExploring:
             self.inertia_weight = self.inertia_weight * self.inertia_weight_reduction
-            isExploring = (self.inertia_weight > self.pso_args['inertia_weight_min'])
+            isExploring = (self.inertia_weight > self.pso_param_dict['inertia_weight_min'])
             if not isExploring:
                 if self.verbatim:
                     print('SWITCH TO EPLOIT! Iteration %d/%d.' % (iteration, self.nr_iterations_trained))
@@ -391,7 +390,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 #         self.speeds_before = []
 #         self.speeds_after = []
         
-        for i_particle in range(self.pso_args['nr_particles']):
+        for i_particle in range(self.pso_param_dict['nr_particles']):
             self.update_particle(i_particle)
         
 #         avg_speed_before = np.mean(self.speeds_before)
@@ -413,15 +412,15 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         self.particle_train_best_scores = []
         self.particle_train_best_pos = []
         
-        for i_particle in range(self.pso_args['nr_particles']):
+        for i_particle in range(self.pso_param_dict['nr_particles']):
             r1 = np.random.uniform(size=(self.nr_variables))
             r2 = np.random.uniform(size=(self.nr_variables))
 
-            position = self.pso_args['xMin'] + r1 * (self.pso_args['xMax'] - 
-                                    self.pso_args['xMin'])
-            velocity = self.pso_args['alpha']/self.pso_args['delta_t'] * \
-                            ((self.pso_args['xMin'] - self.pso_args['xMax'])/2 + r2 * 
-                             (self.pso_args['xMax'] - self.pso_args['xMin']))
+            position = self.pso_param_dict['xMin'] + r1 * (self.pso_param_dict['xMax'] - 
+                                    self.pso_param_dict['xMin'])
+            velocity = self.pso_param_dict['alpha']/self.pso_param_dict['delta_t'] * \
+                            ((self.pso_param_dict['xMin'] - self.pso_param_dict['xMax'])/2 + r2 * 
+                             (self.pso_param_dict['xMax'] - self.pso_param_dict['xMin']))
 
             starting_score = 1e20
             
@@ -450,10 +449,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         particle_best_difference = self.particle_train_best_pos[i_particle] - self.positions[i_particle]
         swarm_best_difference = self.swarm_best_pos_train - self.positions[i_particle]
 
-        self.velocities[i_particle] = self.inertia_weight * self.velocities[i_particle] + self.pso_args['c1'] * q * \
-                                      particle_best_difference / self.pso_args['delta_t'] + \
-                                      self.pso_args['c2'] * r * swarm_best_difference / \
-                                      self.pso_args['delta_t']
+        self.velocities[i_particle] = self.inertia_weight * self.velocities[i_particle] + self.pso_param_dict['c1'] * q * \
+                                      particle_best_difference / self.pso_param_dict['delta_t'] + \
+                                      self.pso_param_dict['c2'] * r * swarm_best_difference / \
+                                      self.pso_param_dict['delta_t']
         
         # now limit velocity to vMax
         absolute_velocity_before_normalization = np.sqrt(np.sum(np.power(self.velocities[i_particle], 2)))
@@ -467,7 +466,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 #         self.parent.speeds_before.append(absolute_velocity_before_normalization)
 #         self.parent.speeds_after.append(absolute_velocity_after_normalization)
             
-        self.positions[i_particle] = self.positions[i_particle] + self.velocities[i_particle] * self.pso_args['delta_t']
+        self.positions[i_particle] = self.positions[i_particle] + self.velocities[i_particle] * self.pso_param_dict['delta_t']
         
         
 def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learning, train_on_real_obs, network_args, 
@@ -521,7 +520,7 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                             
                     pickle.dump(training_data_dict, open(model_path + 'training_data_dict.p', 'wb'))
             
-                model.save(directory + 'iteration_{}.h5'.format(iteration))
+                model.save(directory + 'iter_{}.h5'.format(iteration))
                 
                 results_queue.put('save_successful')
                 
