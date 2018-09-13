@@ -10,11 +10,11 @@ import multiprocessing as mp
 import queue
 import pickle
 from model_setup import *
-from data_processing import get_weights, predict_points, loss_func_obs_stats
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
 from plotting import get_real_obs_plot, get_smf_ssfr_fq_plot_mock_obs
-
+from data_processing import get_weights, predict_points
+from observational_data_management import plots_obs_stats, loss_func_obs_stats
 
 class Feed_Forward_Neural_Network():
     
@@ -66,7 +66,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             'min_std_tol': 0.01,
             'patience': 300,
             'patience_parameter': 'val',
-            'restart_check_interval': 100
+            'restart_check_interval': 100,
+            'no_validation': False
         }
     
         if pso_args is not None:
@@ -76,11 +77,12 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 else:
                     print('\'%s\ is not a valid key. Choose between:' % (key), self.pso_args.keys())
                     break
-                    
+       
         self.parent = parent
         self.training_data_dict = training_data_dict
         self.reinf_learning = reinf_learning
         self.train_on_real_obs = real_observations
+        self.no_validation = self.pso_args['no_validation']
         if real_observations:
             self.obs_type = 'real_observations'
         else:
@@ -137,23 +139,30 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         os.makedirs(os.path.dirname(self.model_path + 'progress.txt'), exist_ok=True)
         with open(self.model_path + 'progress.txt', 'w+') as f:
             
-            self.inp_queue = mp.Queue()
-            self.results_queue = mp.Queue()
-            self.print_dist_queue = mp.Queue()
-            if draw_figs:
-                self.figure_drawer_queue = mp.Queue()
+            if self.verbatim:
+                print('{}, Training started. \n'.format(datetime.datetime.now().strftime("%H:%M:%S")))
+            f.write('{}, Training started. \n'.format(datetime.datetime.now().strftime("%H:%M:%S")))
+            f.flush()
+            
+            # the four queues that will relay info between subprocesses and main process
+            self.inp_queue = mp.Queue() # main -> sub, give positions in parameter space to evaluate
+            self.results_queue = mp.Queue() # sub -> main, report back results to main process
+            self.print_dist_queue = mp.Queue() # main -> sub, gives all positions to a worker that computes interparticle distances
+            if draw_figs['train'] or draw_figr['val']:
+                self.figure_drawer_queue = mp.Queue() # main -> sub, sends positions and orders to draw figures and store them
             
             process_list = []
             for i in range(self.nr_processes):
                 process = mp.Process(target=particle_evaluator, args=(self.inp_queue, self.results_queue, self.training_data_dict, 
                                                                       self.reinf_learning, self.train_on_real_obs, 
-                                                                      self.network_args, self.weight_shapes, loss_dict))
+                                                                      self.network_args, self.weight_shapes, loss_dict,
+                                                                      self.model_path))
                 process_list.append(process)
                 
             distance_process = mp.Process(target=save_distances, args=(self.print_dist_queue, self.model_path))
             process_list.append(distance_process)
             
-            if draw_figs:
+            if draw_figs['train'] or draw_figr['val']:
                 figure_drawer_process = mp.Process(target=figure_drawer, args=(self.figure_drawer_queue, self.model_path, 
                                                                                self.weight_shapes, self.network_args, 
                                                                                self.training_data_dict, self.train_on_real_obs,
@@ -165,7 +174,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
             should_start_fresh = True
             while should_start_fresh:
-                should_start_fresh = False
+                should_start_fresh = False # when the network get stuck in a local minima, restart the pso
 
                 self.inertia_weight_reduction = np.exp(np.log(self.pso_args['inertia_weight_min'] 
                                                          / self.pso_args['inertia_weight_start'])
@@ -178,6 +187,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 self.swarm_best_score_train = float('Inf')
                 self.swarm_best_score_val = float('Inf')
                 
+                # lists containing distance measures between the best points in parameter space found
                 self.swarm_best_distance_moved_p_point_one = []
                 self.swarm_best_distance_moved_p_one = []
                 self.swarm_best_distance_moved_p_two = []
@@ -188,9 +198,6 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 
                 self.iterations_of_swarm_val_best = []
                 self.iterations_of_swarm_train_best = []
-                
-                self.avg_speed_before_history = []
-                self.avg_speed_after_history = []
                     
                 self.time_since_train_improvement = 0
                 self.time_since_val_improvement = 0
@@ -209,10 +216,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                         break
                         
                     if int(iteration/10) == iteration/10:
-                        self.print_dist_queue.put([self.positions, iteration])
+                        self.print_dist_queue.put([self.positions, iteration]) # store interparticle distances
 
                     for i_particle in range(self.pso_args['nr_particles']):
-                        self.inp_queue.put([self.positions[i_particle], i_particle, 'train'])
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 'train']) 
 
                     particle_scores = np.zeros(self.pso_args['nr_particles'])
                     for i_particle in range(self.pso_args['nr_particles']):
@@ -222,7 +229,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                     
                     self.update_loss_stats(particle_scores, f, iteration)
 
-                    self.update_swarm(speed_check, f)
+#                     self.update_swarm(speed_check, f)
 
                     self.update_inertia_weight(iteration, f)
                     
@@ -238,6 +245,27 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             for process in process_list:
                 process.terminate()
                 process.join()
+    
+    def swarm_best_dist_update(self, i_particle):
+        
+        self.swarm_best_distance_moved_p_point_one.append(
+            minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=.1)
+        )
+        self.swarm_best_distance_moved_p_one.append(
+            minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=1)
+        )
+        self.swarm_best_distance_moved_p_two.append(
+            minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=2)
+        )
+        self.swarm_best_distance_moved_p_inf = [np.max(np.absolute(self.positions[i_particle] - self.swarm_best_pos_train))]
+        distance_dict = {
+            'swarm_best_distance_moved_p_point_one': self.swarm_best_distance_moved_p_point_one,
+            'swarm_best_distance_moved_p_one': self.swarm_best_distance_moved_p_one,
+            'swarm_best_distance_moved_p_two': self.swarm_best_distance_moved_p_two,
+            'swarm_best_distance_moved_p_inf': self.swarm_best_distance_moved_p_inf
+        }
+        os.makedirs(os.path.dirname(self.model_path + 'swarm_best_distance_moved.p'), exist_ok=True)
+        pickle.dump(distance_dict, open(self.model_path + 'swarm_best_distance_moved.p', 'wb'))
             
     def update_loss_stats(self, results, f, iteration):
     
@@ -257,79 +285,71 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 self.training_score_history.append(result)
                 self.iterations_of_swarm_train_best.append(iteration)
                 
-                self.swarm_best_distance_moved_p_point_one.append(
-                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=.1)
-                )
-                self.swarm_best_distance_moved_p_one.append(
-                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=1)
-                )
-                self.swarm_best_distance_moved_p_two.append(
-                    minkowski_distance([self.positions[i_particle], self.swarm_best_pos_train], p=2)
-                )
-                self.swarm_best_distance_moved_p_inf = [np.max(np.absolute(self.positions[i_particle] - self.swarm_best_pos_train))]
-                distance_dict = {
-                    'swarm_best_distance_moved_p_point_one': self.swarm_best_distance_moved_p_point_one,
-                    'swarm_best_distance_moved_p_one': self.swarm_best_distance_moved_p_one,
-                    'swarm_best_distance_moved_p_two': self.swarm_best_distance_moved_p_two,
-                    'swarm_best_distance_moved_p_inf': self.swarm_best_distance_moved_p_inf
-                }
-                os.makedirs(os.path.dirname(self.model_path + 'swarm_best_distance_moved.p'), exist_ok=True)
-                pickle.dump(distance_dict, open(self.model_path + 'swarm_best_distance_moved.p', 'wb'))
+                self.swarm_best_dist_update(i_particle)
                 
                 self.swarm_best_pos_train = self.positions[i_particle]
                 self.time_since_train_improvement = 0
-                
-                self.inp_queue.put([self.positions[i_particle], i_particle, 
-                                    'save {:d} training {}'.format(iteration, self.model_path)])
-                out = self.results_queue.get()
+                                
+                if not self.no_validation:
+                    # see if the result is also the highest val result so far
+                    self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
+                    val_score, stds = self.results_queue.get()
 
-                if out != 'save_successful':
-                    print('out: ', out)
-                    print('model could not be saved')
-                
-                # see if the result is also the highest val result so far
-                self.inp_queue.put([self.positions[i_particle], i_particle, 'val'])
-                val_score, stds = self.results_queue.get()
-                
-                is_swarm_best_val = val_score < self.swarm_best_score_val
-                
-                if is_swarm_best_val:
-                    
-                    self.best_val_stds = stds
-                    
-                    self.swarm_best_pos_val = self.positions[i_particle]
-                    self.validation_score_history.append(val_score)
-                    self.iterations_of_swarm_val_best.append(iteration)
-                    self.swarm_best_score_val = val_score
-                    
-                    self.time_since_val_improvement = 0
-                    
-                    if self.draw_figs:
-                        self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration])
-                    
-                    # save the model
-                    self.inp_queue.put([self.positions[i_particle], i_particle, 
-                                        'save {:d} validation {}'.format(iteration, self.model_path)])
-                    out = self.results_queue.get()
+                    is_swarm_best_val = val_score < self.swarm_best_score_val
 
-                    if out != 'save_successful':
-                        print('out: ', out)
-                        print('model could not be saved')
-                                            
+                    if is_swarm_best_val:
+
+                        self.best_val_stds = stds
+
+                        self.swarm_best_pos_val = self.positions[i_particle]
+                        self.validation_score_history.append(val_score)
+                        self.iterations_of_swarm_val_best.append(iteration)
+                        self.swarm_best_score_val = val_score
+
+                        self.time_since_val_improvement = 0
+
+                        if self.draw_figs['val']:
+                            self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration, 'val'])
+
+                        # save the model
+                        self.inp_queue.put([self.positions[i_particle], i_particle, 
+                                            'save {:d} validation {}'.format(iteration, self.model_path)])
+                        out = self.results_queue.get()
+
+                        if out != 'save_successful':
+                            print('out: ', out)
+                            print('model could not be saved')
+                
+                if self.no_validation:
+                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}'.format(
+                          datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result)
+                else:
+                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
+                          datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score)
                 if self.verbatim:
-                    print('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
-                          datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
-                f.write('{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}\n'.format(
-                      datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score))
+                    print(update_message)
+                f.write('\n' + update_message)
                 f.flush()
                 
-                score_dict = {
-                    'iterations_train_best': self.iterations_of_swarm_train_best,
-                    'iterations_val_best': self.iterations_of_swarm_val_best,
-                    'train_score_history': self.training_score_history,
-                    'val_score_history': self.validation_score_history
-                }
-                pickle.dump(score_dict, open(self.model_path + 'score_history.p', 'wb'))
+        # save/plot only the results from the best network in this iteration
+        self.inp_queue.put([self.positions[i_particle], i_particle, 
+                            'save {:d} training'.format(iteration)])
+        out = self.results_queue.get()
+
+        if self.draw_figs['train']:
+            self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration, 'train'])
+
+        if out != 'save_successful':
+            print('out: ', out)
+            print('model could not be saved')
+
+        score_dict = {
+            'iterations_train_best': self.iterations_of_swarm_train_best,
+            'iterations_val_best': self.iterations_of_swarm_val_best,
+            'train_score_history': self.training_score_history,
+            'val_score_history': self.validation_score_history
+        }
+        pickle.dump(score_dict, open(self.model_path + 'score_history.p', 'wb'))
     
     def check_progress(self, f, glob_start, iteration):
         
@@ -387,17 +407,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.flush()
         
     def update_swarm(self, speed_check, f):
-        
-#         self.speeds_before = []
-#         self.speeds_after = []
-        
+     
         for i_particle in range(self.pso_args['nr_particles']):
             self.update_particle(i_particle)
-        
-#         avg_speed_before = np.mean(self.speeds_before)
-#         avg_speed_after = np.mean(self.speeds_after)
-#         self.avg_speed_before_history.append(avg_speed_before)
-#         self.avg_speed_after_history.append(avg_speed_after)
         
         if speed_check:
             print('Average speed of the particles before normalization is: ', avg_speed_before)
@@ -471,7 +483,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         
         
 def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learning, train_on_real_obs, network_args, 
-                       weight_shapes, loss_dict):
+                       weight_shapes, loss_dict, model_path):
 
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
                     activation_function, output_activation, reg_strength = network_args
@@ -503,16 +515,15 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
                     stds = np.std(y_pred, axis=0)
                     results_queue.put([score, stds])
                 
-            elif len(str_list) == 4:
+            elif len(str_list) == 3:
                 iteration = str_list[1]
                 mode_of_hs = str_list[2]
-                model_path = str_list[3]
                 
                 directory = '{}{}_best/'.format(model_path, mode_of_hs)
                 
                 dir_exists = os.path.exists(directory)
                 if not dir_exists:
-                    os.makedirs(os.path.dirname(directory + 'iter_{}.h5'.format(iteration)), exist_ok=True)
+                    os.makedirs(os.path.dirname(directory + 'iteration_{}.h5'.format(iteration)), exist_ok=True)
                     
                     for the_file in os.listdir(directory):
                         file_path = os.path.join(directory, the_file)
@@ -599,39 +610,40 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
     keep_evaluating = True
     
     while keep_evaluating:
-        position, iteration = queue.get()
+        position, iteration, data_type = queue.get()
         
         weight_mat_list = get_weights(position, weight_shapes)
         model.set_weights(weight_mat_list)
         
         if real_obs: # first plot contains only csfrd, which is not redshift specific
-            title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
-            fig_csfrd_file_path = '{}figures_validation_weights/val_data/all_losses/csfrd/iteration_{}.png'.format(
-                model_path, iteration
+            title = 'Iteration {}, best {} weights, {} data points shown'.format(iteration, data_type, data_type)
+            fig_csfrd_file_path = '{}figures_{}_weights/{}_data/all_losses/csfrd/iteration_{}.png'.format(
+                model_path, data_type, data_type, iteration
             )
-            get_real_obs_plot(model, training_data_dict, csfrd_plot=True, title=title, data_type='val', 
+            get_real_obs_plot(model, training_data_dict, csfrd_plot=True, title=title, data_type=data_type, 
                               save=True, file_path=fig_csfrd_file_path, running_from_script=True, loss_dict=loss_dict)
             
         if real_obs: # second plot is of the projected correlation function, also not redshift specific
-            title = 'Iteration {}, best validation weights, validation data points shown'.format(iteration)
-            fig_wp_file_path = '{}figures_validation_weights/val_data/all_losses/wp/iteration_{}.png'.format(
-                model_path, iteration
+            title = 'Iteration {}, best {} weights, {} data points shown'.format(iteration, data_type, data_type)
+            fig_wp_file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{}.png'.format(
+                model_path, data_type, data_type, iteration
             )
-            get_real_obs_plot(model, training_data_dict, clustering_plot=True, title=title, data_type='val', 
+            get_real_obs_plot(model, training_data_dict, clustering_plot=True, title=title, data_type=data_type, 
                               save=True, file_path=fig_wp_file_path, running_from_script=True, loss_dict=loss_dict)
             
         for redshift in training_data_dict['unique_redshifts']:
         
-            title = 'Redshift {:.1f}, iteration {}, best validation weights, validation data points shown'.format(redshift, iteration)
-            fig_file_path = '{}figures_validation_weights/val_data/all_losses/Z{:02.0f}/iteration_{}.png'.format(
-                model_path, redshift*10, iteration
+            title = 'Redshift {:.1f}, iteration {}, best {} weights, {} data points shown'.format(redshift, iteration, 
+                                                                                                          data_type, data_type)
+            fig_file_path = '{}figures_{}_weights/{}_data/all_losses/Z{:02.0f}/iteration_{}.png'.format(
+                model_path, data_type, data_type, redshift*10, iteration
             )
             if real_obs:
                 # second plot contains redshift specific quantities
-                get_real_obs_plot(model, training_data_dict, redshift=redshift, title=title, data_type='val', 
+                get_real_obs_plot(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
                                   save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
             else:
-                get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=redshift, title=title, data_type='val', 
+                get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
                                               full_range=True, save=True, file_path=fig_file_path, running_from_script=True)
         
 

@@ -9,6 +9,7 @@ import random
 import numpy as np
 
 from data_processing import *
+from observational_data_management import add_obs_data
 from loading_datasets import *
 from plotting import *
 from pso_parallel_training_queue import *
@@ -23,7 +24,7 @@ verbatim = True
 test = True
 pretrained_network_name = '8x8_all-points_redshifts00-01-02-05-10_train-test-val080-020-000_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_val_score6.50e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
-draw_figs = True
+draw_figs = {'train': True, 'val': False} # should figures using the <mode> weights predicting on <mode> data be drawn?
 
 ### Loss parameters
 loss_dict = {
@@ -43,18 +44,19 @@ loss_dict = {
 }
 
 ### PSO parameters
-nr_processes = 1
+nr_processes = 30
 nr_iterations = 2000
 std_penalty = False
 min_std_tol = 0.01 # minimum allowed std for any parameter
 pso_args = {
-    'nr_particles': 1 * nr_processes,
+    'nr_particles': 3 * nr_processes,
     'inertia_weight_start': 1,
     'inertia_weight_min': 0.3,
     'exploration_iters': 1500,
     'patience': 100,
     'patience_parameter': 'train',
-    'restart_check_interval': 10
+    'restart_check_interval': 10,
+    'no_validation': True
 }
 
 if test:
@@ -64,6 +66,10 @@ else:
     weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
                               str(loss_dict['shm_weight'])])
     network_name += '__' + weight_string
+    if pro_args['no_validation']:
+        network_name += '_noVal'
+    else:
+        network_name += '_withVal'
     if real_observations:
         network_name += '_real_obs'
     else:
@@ -74,7 +80,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""
 if os.path.exists(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p'):
     training_data_dict = pickle.load(open(backprop_nets_dir + pretrained_network_name + '/training_data_dict.p', 'rb'))
     # adjust the data for the reinforcement learning, no more validation sets and
-    training_data_dict = prune_train_data_dict_for_reinf_learn(training_data_dict)
+    training_data_dict = prune_train_data_dict_for_reinf_learn(training_data_dict, no_val=pso_args['no_validation'])
     # add observational data
     training_data_dict = add_obs_data(training_data_dict, h_0=0.6781, real_obs=real_observations)
     

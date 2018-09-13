@@ -2,7 +2,8 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units, loss_func_obs_stats, get_unit_dict, plots_obs_stats
+from data_processing import predict_points, convert_units, get_unit_dict
+from observational_data_management import loss_func_obs_stats, plots_obs_stats
 from scipy import stats
 import corner
 
