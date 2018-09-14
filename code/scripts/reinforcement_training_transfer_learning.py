@@ -27,6 +27,7 @@ pretrained_network_name = '8x8_all-points_redshifts00-01-02-05-10_train-test-val
 draw_figs = {'train': True, 'val': False} # should figures using the <mode> weights predicting on <mode> data be drawn?
 
 ### Loss parameters
+stellar_mass_bin_width = 0.2 # concerns smf, fq, ssfr losses
 loss_dict = {
     'fq_weight': 1,
     'ssfr_weight': 1,
@@ -39,8 +40,9 @@ loss_dict = {
     'no_coverage_punish': 'exp',
     'no_coverage_factor': 10,
     'min_filled_bin_frac': 0,
-    'nr_redshifts_per_eval': 'all', # nr, 'all'
-    'nr_bins_real_obs': 20
+    'nr_redshifts_per_eval': 'all', # a nr or the string 'all'
+    'stellar_mass_bins': np.arange(7, 12.5, stellar_mass_bin_width),
+    'stellar_mass_bin_width': stellar_mass_bin_width
 }
 
 ### PSO parameters
@@ -55,7 +57,7 @@ pso_args = {
     'exploration_iters': 1500,
     'patience': 100,
     'patience_parameter': 'train',
-    'restart_check_interval': 10,
+    'restart_check_interval': 1e5, # lower to start checking for low stds, not implemented for no val set atm
     'no_validation': True
 }
 
@@ -82,7 +84,7 @@ if os.path.exists(backprop_nets_dir + pretrained_network_name + '/training_data_
     # adjust the data for the reinforcement learning, no more validation sets and
     training_data_dict = prune_train_data_dict_for_reinf_learn(training_data_dict, no_val=pso_args['no_validation'])
     # add observational data
-    training_data_dict = add_obs_data(training_data_dict, h_0=0.6781, real_obs=real_observations)
+    training_data_dict = add_obs_data(training_data_dict, loss_dict, h_0=0.6781, real_obs=real_observations)
     
 else:
     print('there is no pretrained network with that name.')

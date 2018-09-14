@@ -21,6 +21,25 @@ def get_unit_dict():
     
     return unit_dict
 
+
+def redshift_from_scale(scale_factor):
+    
+    if type(scale_factor) is list:
+        redshift = (1/np.array(scale_factor) - 1).tolist()
+    else:
+        redshift = 1/scale_factor - 1
+    return redshift
+    
+    
+def scale_from_redshift(redshift):
+    
+    if type(redshift) is list:
+        scale_factor = (1/(1+np.array(redshift))).tolist()
+    else:
+        scale_factor = 1/(1+redshift)
+    return scale_factor
+    
+
 def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
                       total_set_size=0, train_frac=0, val_frac=0, test_frac=0, pso=False, emerge_targets=False, 
                       real_observations=False, mock_observations=False, h_0=.6781):

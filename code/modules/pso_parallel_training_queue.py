@@ -12,7 +12,7 @@ import pickle
 from model_setup import *
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
-from plotting import get_real_obs_plot, get_smf_ssfr_fq_plot_mock_obs
+from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs
 from data_processing import get_weights, predict_points
 from observational_data_management import plots_obs_stats, loss_func_obs_stats
 
@@ -268,7 +268,9 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         pickle.dump(distance_dict, open(self.model_path + 'swarm_best_distance_moved.p', 'wb'))
             
     def update_loss_stats(self, results, f, iteration):
-    
+        
+        was_swarm_best = False # if True, will draw figures after the for loop
+        best_particle = None
         for i_particle, result in enumerate(results):
             
             is_particle_best = result < self.particle_train_best_scores[i_particle]
@@ -281,6 +283,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
             
             if is_swarm_best_train:
                 
+                was_swarm_best = True
+                best_particle = i_particle
                 self.swarm_best_score_train = result
                 self.training_score_history.append(result)
                 self.iterations_of_swarm_train_best.append(iteration)
@@ -331,25 +335,27 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                 f.write('\n' + update_message)
                 f.flush()
                 
-        # save/plot only the results from the best network in this iteration
-        self.inp_queue.put([self.positions[i_particle], i_particle, 
-                            'save {:d} training'.format(iteration)])
-        out = self.results_queue.get()
+        
 
-        if self.draw_figs['train']:
-            self.figure_drawer_queue.put([self.swarm_best_pos_val, iteration, 'train'])
+        if was_swarm_best:
+            # save/plot only the results from the best network in this iteration
+            self.inp_queue.put([self.swarm_best_pos_train, best_particle, 
+                                'save {:d} training'.format(iteration)])
+            out = self.results_queue.get()
+            if self.draw_figs['train']:
+                self.figure_drawer_queue.put([self.swarm_best_pos_train, iteration, 'train'])
 
-        if out != 'save_successful':
-            print('out: ', out)
-            print('model could not be saved')
+            if out != 'save_successful':
+                print('out: ', out)
+                print('model could not be saved')
 
-        score_dict = {
-            'iterations_train_best': self.iterations_of_swarm_train_best,
-            'iterations_val_best': self.iterations_of_swarm_val_best,
-            'train_score_history': self.training_score_history,
-            'val_score_history': self.validation_score_history
-        }
-        pickle.dump(score_dict, open(self.model_path + 'score_history.p', 'wb'))
+            score_dict = {
+                'iterations_train_best': self.iterations_of_swarm_train_best,
+                'iterations_val_best': self.iterations_of_swarm_val_best,
+                'train_score_history': self.training_score_history,
+                'val_score_history': self.validation_score_history
+            }
+            pickle.dump(score_dict, open(self.model_path + 'score_history.p', 'wb'))
     
     def check_progress(self, f, glob_start, iteration):
         
@@ -620,7 +626,7 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
             fig_csfrd_file_path = '{}figures_{}_weights/{}_data/all_losses/csfrd/iteration_{}.png'.format(
                 model_path, data_type, data_type, iteration
             )
-            get_real_obs_plot(model, training_data_dict, csfrd_plot=True, title=title, data_type=data_type, 
+            get_csfrd_plot_obs(model, training_data_dict, title=title, data_type=data_type, 
                               save=True, file_path=fig_csfrd_file_path, running_from_script=True, loss_dict=loss_dict)
             
         if real_obs: # second plot is of the projected correlation function, also not redshift specific
@@ -628,8 +634,8 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
             fig_wp_file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{}.png'.format(
                 model_path, data_type, data_type, iteration
             )
-            get_real_obs_plot(model, training_data_dict, clustering_plot=True, title=title, data_type=data_type, 
-                              save=True, file_path=fig_wp_file_path, running_from_script=True, loss_dict=loss_dict)
+            get_clustering_plot_obs(model, training_data_dict, title=title, data_type=data_type, 
+                                    save=True, file_path=fig_wp_file_path, running_from_script=True, loss_dict=loss_dict)
             
         for redshift in training_data_dict['unique_redshifts']:
         
@@ -640,8 +646,8 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
             )
             if real_obs:
                 # second plot contains redshift specific quantities
-                get_real_obs_plot(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
-                                  save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
+                get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
+                                         save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
             else:
                 get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
                                               full_range=True, save=True, file_path=fig_file_path, running_from_script=True)

@@ -1215,7 +1215,7 @@ def get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=0, galaxie
         return fig
     
     
-def get_real_obs_plot(model, training_data_dict, redshift=0, csfrd_plot=False, clustering_plot=False, galaxies=None, title=None, 
+def get_csfrd_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
                       data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
                       loss_dict=None):
     
@@ -1224,152 +1224,177 @@ def get_real_obs_plot(model, training_data_dict, redshift=0, csfrd_plot=False, c
     unit_dict = get_unit_dict()
 
     function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
-                                    loss_dict=loss_dict, csfrd_only=csfrd_plot, clustering_only=clustering_plot)
-        
-    if csfrd_plot:
-        
-        (pred_csfrd, true_csfrd, pred_bin_centers_csfrd, obs_bin_centers_csfrd, obs_errors_csfrd) = function_dict['csfrd']
-        obs_bin_centers_csfrd = 1/np.array(obs_bin_centers_csfrd) - 1 # now in redshift
-        pred_bin_centers_csfrd = 1/np.array(pred_bin_centers_csfrd) - 1 # now in redshift 
-        
-        fig = plt.figure(figsize=(25,8))
-        plt.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
-        plt.plot(pred_bin_centers_csfrd, pred_csfrd)
-        plt.xlabel('z', fontsize=15)
-        plt.ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
-        if title is not None:
-            plt.title(title, fontsize=20)
-        if save:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            fig.savefig(file_path, dpi=dpi)
-            plt.close()
-            plt.clf()
-        else:
-            return fig
+                                    loss_dict=loss_dict, csfrd_only=True)
         
         
-    elif clustering_plot:
+    (pred_csfrd, true_csfrd, pred_bin_centers_csfrd, obs_bin_centers_csfrd, obs_errors_csfrd) = function_dict['csfrd']
+    obs_bin_centers_csfrd = 1/np.array(obs_bin_centers_csfrd) - 1 # now in redshift
+    pred_bin_centers_csfrd = 1/np.array(pred_bin_centers_csfrd) - 1 # now in redshift 
+
+    fig = plt.figure(figsize=(25,8))
+    plt.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+    plt.plot(pred_bin_centers_csfrd, pred_csfrd)
+    plt.xlabel('z', fontsize=15)
+    plt.ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+    if title is not None:
+        plt.title(title, fontsize=20)
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+    else:
+        return fig
         
-        (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering']
         
-        global_ymin = float('Inf')
-        global_ymax = -float('Inf')
-        ax_list = []
+def get_clustering_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
+                      data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                      loss_dict=None):        
+
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
         
-        fig = plt.figure(figsize=(10,15))
-        for i_mass_bin in range(len(true_wp)):
-            ax = plt.subplot(len(true_wp), 1, i_mass_bin+1)
+    unit_dict = get_unit_dict()
+
+    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
+                                    loss_dict=loss_dict, clustering_only=True)
+        
+    (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering']
+
+    global_ymin = float('Inf')
+    global_ymax = -float('Inf')
+    ax_list = []
+
+    fig = plt.figure(figsize=(10,15))
+    for i_mass_bin in range(len(true_wp)):
+        ax = plt.subplot(len(true_wp), 1, i_mass_bin+1)
 #             print('values: ', true_wp[i_mass_bin])
 #             print('errors: ', obs_errors_wp[i_mass_bin])
 #             print('preds: ', pred_wp[i_mass_bin])
-            obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
-                                     markersize=3, capsize=5)
-            if list(pred_wp[i_mass_bin]):
-                pred_handle = ax.plot(rp_bin_mids, pred_wp[i_mass_bin])
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-            ax.set_xlabel('$r_p$', fontsize=15)
-            ax.set_ylabel('$w_p$ / Mpc)', fontsize=15)
-            
-            ymin, ymax = ax.get_ylim()
-            
-            if ymin < global_ymin:
-                global_ymin = ymin
-            if ymax > global_ymax:
-                global_ymax = ymax
+        obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
+                                 markersize=3, capsize=5)
+        if list(pred_wp[i_mass_bin]):
+            pred_handle = ax.plot(rp_bin_mids, pred_wp[i_mass_bin])
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel('$r_p$', fontsize=15)
+        ax.set_ylabel('$w_p$ / Mpc)', fontsize=15)
 
-            ax_list.append(ax)
-            
-        fig.subplots_adjust(hspace=0)
+        ymin, ymax = ax.get_ylim()
 
-        for i_ax, ax in enumerate(ax_list):
-            # enable upper ticks as well as right ticks
-            ax.tick_params(axis='x', top=True)
-            ax.tick_params(axis='y', right=True)
-            # turn off x-labels for all but the last subplot
-            if len(ax_list) != (i_ax+1):   
-                ax.set_xlabel('')
-            # set the lims to be the global max/min
-            ax.set_ylim(bottom=global_ymin, top=global_ymax)
-            # make sure the ticks are on the inside and the numbers are on the outside of the plots
-            ax.tick_params(axis="y",direction="in", pad=10)
-            ax.tick_params(axis="x",direction="in", pad=10)
-            # display mass bin inside the plots
-            ax.text(
-                .5, .1, '{:.2f} $\leq$ $log_{{10}}([{}])$ $\leq$ {:.2f}'.format(
-                    mass_bin_edges_wp[i_ax], unit_dict['Stellar_mass'], mass_bin_edges_wp[i_ax+1]
-                ), fontsize=20, transform = ax.transAxes, horizontalalignment='center'
-            )
-                
+        if ymin < global_ymin:
+            global_ymin = ymin
+        if ymax > global_ymax:
+            global_ymax = ymax
 
-            
-        if title is not None:
-            plt.suptitle(title, fontsize=20)
-        if save:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            fig.savefig(file_path, dpi=dpi)
-            plt.close()
-            plt.clf()
-        else:
-            return fig
-        
+        ax_list.append(ax)
+
+    fig.subplots_adjust(hspace=0)
+
+    for i_ax, ax in enumerate(ax_list):
+        # enable upper ticks as well as right ticks
+        ax.tick_params(axis='x', top=True)
+        ax.tick_params(axis='y', right=True)
+        # turn off x-labels for all but the last subplot
+        if len(ax_list) != (i_ax+1):   
+            ax.set_xlabel('')
+        # set the lims to be the global max/min
+        ax.set_ylim(bottom=global_ymin, top=global_ymax)
+        # make sure the ticks are on the inside and the numbers are on the outside of the plots
+        ax.tick_params(axis="y",direction="in", pad=10)
+        ax.tick_params(axis="x",direction="in", pad=10)
+        # display mass bin inside the plots
+        ax.text(
+            .5, .1, '{:.2f} $\leq$ $log_{{10}}([{}])$ $\leq$ {:.2f}'.format(
+                mass_bin_edges_wp[i_ax], unit_dict['Stellar_mass'], mass_bin_edges_wp[i_ax+1]
+            ), fontsize=20, transform = ax.transAxes, horizontalalignment='center'
+        )
+
+
+
+    if title is not None:
+        plt.suptitle(title, fontsize=20)
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
     else:
+        return fig
     
+    
+def get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
+                      data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                      loss_dict=None): 
+            
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
         
-        redshift_index = training_data_dict['unique_redshifts'].index(redshift)
+    unit_dict = get_unit_dict()
 
-        (pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, obs_errors_ssfr, redshifts_ssfr) = function_dict['ssfr']
-        (pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, obs_errors_smf, redshifts_smf) = function_dict['smf']
-        (pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, obs_errors_fq, redshifts_fq) = function_dict['fq']
+    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
+                                    loss_dict=loss_dict)
         
-        plot_names = ['ssfr', 'smf', 'fq']
-        pred_data = [pred_ssfr, pred_smf, pred_fq]
-        true_data = [true_ssfr, true_smf, true_fq]
-        pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq]
-        obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq]
-        obs_errors = [obs_errors_ssfr, obs_errors_smf, obs_errors_fq]
+    redshift_index = training_data_dict['unique_redshifts'].index(redshift)
 
-        x_labels = [
-            'log($[{}])$'.format(unit_dict['Stellar_mass']),
-            'log($[{}])$'.format(unit_dict['Stellar_mass']),
-            'log($[{}])$'.format(unit_dict['Stellar_mass']),
-        ]
-        y_labels = [
-            'log($[{}])$'.format(unit_dict['SSFR']),
-            'log($[{}])$'.format(unit_dict['SMF']),
-            '${}$'.format(unit_dict['FQ']),
-        ]
+    (pred_ssfr, true_ssfr, pred_bin_centers_ssfr, obs_bin_centers_ssfr, obs_errors_ssfr, redshifts_ssfr) = function_dict['ssfr']
+    (pred_smf, true_smf, pred_bin_centers_smf, obs_bin_centers_smf, obs_errors_smf, redshifts_smf) = function_dict['smf']
+    (pred_fq, true_fq, pred_bin_centers_fq, obs_bin_centers_fq, obs_errors_fq, redshifts_fq) = function_dict['fq']
 
-        fig = plt.figure(figsize=(20,15))
-        for i in range(3):
-            ax = plt.subplot(2,2,i+1)
+    plot_names = ['ssfr', 'smf', 'fq']
+    pred_data = [pred_ssfr, pred_smf, pred_fq]
+    true_data = [true_ssfr, true_smf, true_fq]
+    pred_bin_centers = [pred_bin_centers_ssfr, pred_bin_centers_smf, pred_bin_centers_fq]
+    obs_bin_centers = [obs_bin_centers_ssfr, obs_bin_centers_smf, obs_bin_centers_fq]
+    obs_errors = [obs_errors_ssfr, obs_errors_smf, obs_errors_fq]
 
-            plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r-o', markersize=8)
-            plt.errorbar(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], yerr=obs_errors[i][redshift_index], 
-                         fmt = 'bo', capsize=5)
-            plt.xlabel(x_labels[i], fontsize=15)
-            plt.ylabel(y_labels[i], fontsize=15)
+    x_labels = [
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+        'log($[{}])$'.format(unit_dict['Stellar_mass']),
+    ]
+    y_labels = [
+        'log($[{}])$'.format(unit_dict['SSFR']),
+        'log($[{}])$'.format(unit_dict['SMF']),
+        '${}$'.format(unit_dict['FQ']),
+    ]
 
-            if i == 2:
-                location = 'upper left'
-            else:
-                location = 'upper right'
+    fig = plt.figure(figsize=(20,15))
+    for i in range(3):
+        ax = plt.subplot(2,2,i+1)
 
-            ax.set_title('z = {:2.1f}'.format(redshift), 
-                         fontsize=20)
+        plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r-o', markersize=8)
+        plt.errorbar(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], yerr=obs_errors[i][redshift_index], 
+                     fmt = 'bo', capsize=5)
+        plt.xlabel(x_labels[i], fontsize=15)
+        plt.ylabel(y_labels[i], fontsize=15)
 
-            plt.legend(['DNN', 'Observational data'], loc=location, fontsize='xx-large') 
-
-        if title is not None:
-            plt.suptitle(title, y=.96, fontsize=20)
-
-        if save:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            fig.savefig(file_path, dpi=dpi)
-            plt.close()
-            plt.clf()
+        if i == 2:
+            location = 'upper left'
         else:
-            return fig
+            location = 'upper right'
+
+        ax.set_title('z = {:2.1f}'.format(redshift), 
+                     fontsize=20)
+
+        plt.legend(['DNN', 'Observational data'], loc=location, fontsize='xx-large') 
+
+    if title is not None:
+        plt.suptitle(title, y=.96, fontsize=20)
+
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+    else:
+        return fig
+    
+    
+def get_ssfr_smf_fq_surface_plot(model, training_data_dict, galaxies=None, title=None, 
+                                 data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                                 loss_dict=None): 
+    
     
     
 def get_print_name(feature_name):

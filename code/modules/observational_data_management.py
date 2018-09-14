@@ -4,6 +4,7 @@ import data_processing
 import sys
 from scipy.interpolate import SmoothBivariateSpline, interp1d
 from halotools.mock_observables import wp as projected_corr_func
+from numpy.polynomial.polynomial import polyval
 from scipy.stats import binned_statistic
 import warnings
 from contextlib import contextmanager, redirect_stdout
@@ -20,8 +21,60 @@ def suppress_stdout():
         finally:
             sys.stdout = old_stdout
             
+            
+def get_max_resolvable_stellar_mass(redshifts, bin_width, box_size, min_count=10, degree=6, n_points=1000):
+    """
+    Returns the maximum resolvable stellar mass. Above this mass, constraints can not be enforced
+    
+    Arguments
+    redshifts -- The redshifts of the snapshots that the network is predicting
+    bin_width -- The bin width in stellar mass for the stellar mass function
+    box_size -- The side length of the box containing the galaxies (assumed to be cubic)
+    
+    Keyword arguments
+    min_count -- The minimum number of galaxies that is to be expected in a box for the loss function to 'care about' it 
+                 (default 10)
+    degree -- The degree of the polynomial used to fit the observational constraints in order to get the mass corresponding 
+              to the minimum resolvable abundance (default 6)
+    n_points -- The number of points of the approximated polynomial, affects precision of the resolvable stellar mass
+    """
+    warnings.simplefilter('ignore', np.RankWarning) # the fit always throws a warning, but it is ok for all snapshots we have so far
+    
+    filename = '/home/magnus/data/observational_data/all_data.h5'
+    file = h5py.File(filename, 'r')
+    universe_0 = file['Universe_0']
+    smf = universe_0['SMF']
+    data = smf['Data']
+    sets = smf['Sets']
 
-def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=False, validation_fraction=0):
+    min_abundance = np.log10(min_count / box_size**3 / bin_width)
+    
+    max_masses = []
+
+    for redshift in redshifts:
+        stellar_masses = []
+        abundances = []
+        errors = []
+
+        for i_key, key in enumerate(list(data)):
+            min_redshift = list(sets)[i_key][2]
+            max_redshift = list(sets)[i_key][3]
+            if redshift >= min_redshift and redshift <= max_redshift:
+                stellar_masses.extend([list(point)[0] for point in list(data[key])])
+                abundances.extend([list(point)[1] for point in list(data[key])])
+                errors.extend([list(point)[2] for point in list(data[key])])
+
+        weights = 1 / np.array(errors)
+        x = np.linspace(np.min(stellar_masses), np.max(stellar_masses), n_points) # contains masses
+        p3 = np.polyfit(stellar_masses, abundances, degree, w=weights)
+        max_mass_ind = np.argmin(np.absolute(polyval(x, np.flip(p3, axis=0)) - min_abundance))
+        max_mass = x[max_mass_ind] + bin_width
+        max_masses.append(max_mass)
+        
+    return max_masses
+
+
+def add_obs_data(training_data_dict, loss_dict, h_0, real_obs=False, mock_observations=False, validation_fraction=0, box_size=200):
     
     if real_obs:
         
@@ -33,6 +86,10 @@ def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=Fals
         min_redshift = np.min(training_data_dict['unique_redshifts'])
         min_scalefactor = 1 / (1 + max_redshift)
         max_scalefactor = 1 / (1 + min_redshift)
+        
+        # Get the max resolvable stellar mass for each redshift
+        max_res_masses = get_max_resolvable_stellar_mass(training_data_dict['unique_redshifts'], 
+                                                         loss_dict['stellar_mass_bin_width'], box_size)
         
         # Get the SMF object from the universe
         smf = universe_0['SMF']
@@ -69,6 +126,25 @@ def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=Fals
                 real_smf_data['train']['binning_feat'].extend([list(point)[0] for point in list(data[key])])
                 real_smf_data['train']['smf'].extend([list(point)[1] for point in list(data[key])])
                 real_smf_data['train']['errors'].extend([list(point)[2] for point in list(data[key])])
+                
+        # prune away points corresponding to statistically insignificant stellar masses
+        for i_redshift, redshift in enumerate(training_data_dict['unique_redshifts']):
+            points_to_delete = []
+            for i_point in range(len(real_smf_data['train']['scale_factor_range'])):
+                if (
+                    redshift >= data_processing.redshift_from_scale(real_smf_data['train']['scale_factor_range'][i_point][1])
+                    and
+                    redshift <= data_processing.redshift_from_scale(real_smf_data['train']['scale_factor_range'][i_point][0])
+                ):
+                    if real_smf_data['train']['binning_feat'][i_point] > max_res_masses[i_redshift]:
+                        points_to_delete.append(i_point)
+                        
+            for i_point in reversed(points_to_delete):
+                del real_smf_data['train']['scale_factor'][i_point]
+                del real_smf_data['train']['scale_factor_range'][i_point]
+                del real_smf_data['train']['binning_feat'][i_point]
+                del real_smf_data['train']['smf'][i_point]
+                del real_smf_data['train']['errors'][i_point]
                 
         surveys_covering_redshifts = []
         for redshift in training_data_dict['unique_redshifts']:
@@ -115,7 +191,25 @@ def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=Fals
                     real_ssfr_data['train']['scale_factor'].append(scale_factor)
                     real_ssfr_data['train']['binning_feat'].append(data_point[3])
                     real_ssfr_data['train']['ssfr'].append(data_point[1])
-                    real_ssfr_data['train']['errors'].append(data_point[2])        
+                    real_ssfr_data['train']['errors'].append(data_point[2])
+                    
+        # prune away points corresponding to statistically insignificant stellar masses
+        unique_scale_factors = data_processing.scale_from_redshift(training_data_dict['unique_redshifts'])
+        points_to_delete = []
+        for i_point in range(len(real_ssfr_data['train']['scale_factor'])):
+#             print(np.array(unique_scale_factors))
+#             print(real_ssfr_data['train']['scale_factor'][i_point])
+#             print(np.array(unique_scale_factors) - real_ssfr_data['train']['scale_factor'][i_point])
+            closest_redshift_index = np.argmin(np.absolute(np.array(unique_scale_factors) 
+                                                           - real_ssfr_data['train']['scale_factor'][i_point]))
+            if real_ssfr_data['train']['binning_feat'][i_point] >= max_res_masses[closest_redshift_index]:
+                points_to_delete.append(i_point)
+                                    
+        for i_point in reversed(points_to_delete):
+            del real_ssfr_data['train']['scale_factor'][i_point]
+            del real_ssfr_data['train']['binning_feat'][i_point]
+            del real_ssfr_data['train']['ssfr'][i_point]
+            del real_ssfr_data['train']['errors'][i_point]
         
         training_data_dict['real_ssfr_data'] = real_ssfr_data
 
@@ -157,6 +251,25 @@ def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=Fals
                 real_fq_data['train']['binning_feat'].extend([list(point)[0] for point in list(data[key])])
                 real_fq_data['train']['fq'].extend([list(point)[1] for point in list(data[key])])
                 real_fq_data['train']['errors'].extend([list(point)[2] for point in list(data[key])])
+                
+        # prune away points corresponding to statistically insignificant stellar masses
+        for i_redshift, redshift in enumerate(training_data_dict['unique_redshifts']):
+            points_to_delete = []
+            for i_point in range(len(real_fq_data['train']['scale_factor_range'])):
+                if (
+                    redshift >= data_processing.redshift_from_scale(real_fq_data['train']['scale_factor_range'][i_point][1])
+                    and
+                    redshift <= data_processing.redshift_from_scale(real_fq_data['train']['scale_factor_range'][i_point][0])
+                ):
+                    if real_fq_data['train']['binning_feat'][i_point] > max_res_masses[i_redshift]:
+                        points_to_delete.append(i_point)
+                        
+            for i_point in reversed(points_to_delete):
+                del real_fq_data['train']['scale_factor'][i_point]
+                del real_fq_data['train']['scale_factor_range'][i_point]
+                del real_fq_data['train']['binning_feat'][i_point]
+                del real_fq_data['train']['fq'][i_point]
+                del real_fq_data['train']['errors'][i_point]
                 
         surveys_covering_redshifts = []
         for redshift in training_data_dict['unique_redshifts']:
@@ -261,10 +374,15 @@ def add_obs_data(training_data_dict, h_0, real_obs=False, mock_observations=Fals
         )
         real_clustering_data['train']['rp_bin_edges'] = np.power(10, real_clustering_data['train']['rp_bin_edges']) # back to Mpc/h
         
-        #  move over some of the obs data points to the validation set, if the frac is larger than one
-        if validation_fraction > 0:
-            pass
-            
+        # if the right bin edge corresponds to a mass higher than the max allowed, take away the bin
+        redshift_01_index = training_data_dict['unique_redshifts'].index(0.1)
+        for stellar_mass in reversed(real_clustering_data['train']['stellar_mass_bin_edges']):
+        
+            if stellar_mass > max_res_masses[redshift_01_index]:
+                del real_clustering_data['train']['stellar_mass_bin_edges'][-1]
+                del real_clustering_data['train']['wp'][-1]
+                del real_clustering_data['train']['errors'][-1]
+         
         training_data_dict['real_clustering_data'] = real_clustering_data
         
     if mock_observations:
@@ -561,11 +679,11 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
             relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
                         
             bin_means, bin_edges, bin_numbers = binned_statistic(binning_feat[relevant_inds], bin_feat[relevant_inds], 
-                                                                 bins=loss_dict['nr_bins_real_obs'], statistic='mean')
-            bin_mids = np.array([(bin_edges[i+1] - bin_edges[i])/2 for i in range(loss_dict['nr_bins_real_obs'])])
+                                                                 bins=loss_dict['stellar_mass_bins'], statistic='mean')
+            bin_mids = np.array([(bin_edges[i+1] - bin_edges[i])/2 for i in range(len(bin_means))])
 
             if bin_feat_name == 'smf':
-                bin_counts = [np.sum(bin_numbers == i) for i in range(1, loss_dict['nr_bins_real_obs']+1)]
+                bin_counts = [np.sum(bin_numbers == i) for i in range(1, len(bin_means)+1)]
                 bin_counts = np.array(bin_counts, dtype=np.float)
                 nonzero_inds = np.nonzero(bin_counts)
                 bin_counts = bin_counts[nonzero_inds]
@@ -591,7 +709,7 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
 
                 pred_bin_feat_dist = []
                 nonzero_inds = []
-                for bin_num in range(1, loss_dict['nr_bins_real_obs']+1):
+                for bin_num in range(1, len(bin_means)+1):
 
                     if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
                         fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
@@ -783,6 +901,112 @@ def binned_loss(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_
         return [loss, dist_outside]
     
     
+def get_ssfr_fq_smf_splines(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_type, loss_dict, real_obs, 
+                            grid_points=100):
+    todo: implement the function that receives the output from this function (spline_plots which is in turn called on by get_ssfr_smf_fq_surface_plot)
+    if real_obs:
+
+#         # if one wants to train on only a few redshifts. not really used anymore (didn't work out great)
+#         if data_type != 'train' or loss_dict['nr_redshifts_per_eval'] == 'all':
+#             nr_redshifts = len(training_data_dict['unique_redshifts'])
+#         else:
+#             nr_redshifts = loss_dict['nr_redshifts_per_eval']
+#         evaluated_redshift_indeces = np.random.choice(len(training_data_dict['unique_redshifts']), nr_redshifts, replace=False)
+#         evaluated_redshifts = np.array(training_data_dict['unique_redshifts'])[evaluated_redshift_indeces]
+
+        scale_factor_of_pred_points = []
+        binning_feat_values_pred_points = []
+        pred_bin_feat = []
+
+        for i, (i_red, redshift) in enumerate(zip(evaluated_redshift_indeces, evaluated_redshifts)):
+
+            relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+
+            bin_means, bin_edges, bin_numbers = binned_statistic(binning_feat[relevant_inds], bin_feat[relevant_inds], 
+                                                                 bins=loss_dict['stellar_mass_bins'], statistic='mean')
+            bin_mids = np.array([(bin_edges[i+1] - bin_edges[i])/2 for i in range(len(bin_means))])
+
+            if bin_feat_name == 'smf':
+                bin_counts = [np.sum(bin_numbers == i) for i in range(1, len(bin_means)+1)]
+                bin_counts = np.array(bin_counts, dtype=np.float)
+                nonzero_inds = np.nonzero(bin_counts)
+                bin_counts = bin_counts[nonzero_inds]
+                bin_mids = bin_mids[nonzero_inds]
+
+                bin_widths = bin_edges[1] - bin_edges[0]
+                pred_bin_feat_dist = bin_counts / 200**3 / bin_widths
+
+                # since we might only be using a subset of the original data points, compensate for this
+                pred_bin_feat_dist /= training_data_dict['{}_frac_of_tot_by_redshift'.format(data_type)][i]
+
+                pred_bin_feat_dist = np.log10(pred_bin_feat_dist)
+
+            elif bin_feat_name == 'fq':
+
+                scale_factor = 1 / (1 + redshift)
+
+                H_0 = 67.81 / (3.09e19) # 1/s
+                H_0 = H_0 * 60 * 60 * 24 * 365 # 1/yr
+                h_r = H_0 * np.sqrt(1e-3*scale_factor**(-4) + 0.308*scale_factor**(-3) + 0*scale_factor**(-2) + 0.692)
+                ssfr_cutoff = 0.3*h_r
+                log_ssfr_cutoff = np.log10(ssfr_cutoff)
+
+                pred_bin_feat_dist = []
+                nonzero_inds = []
+                for bin_num in range(1, len(bin_means)+1):
+
+                    if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
+                        fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
+                            / len(bin_feat[relevant_inds][bin_numbers == bin_num])
+                        pred_bin_feat_dist.append(fq)
+                        nonzero_inds.append(bin_num-1)
+                bin_mids = bin_mids[nonzero_inds]
+
+            else:    
+                pred_bin_feat_dist = bin_means[np.invert(np.isnan(bin_means))]
+
+                bin_mids = bin_mids[np.invert(np.isnan(bin_means))]
+
+            scale_factor_of_pred_points.extend([1 / (1 + redshift)] * len(pred_bin_feat_dist))
+            binning_feat_values_pred_points.extend(bin_mids)
+            pred_bin_feat.extend(pred_bin_feat_dist)
+
+        # Create the spline function based on predictions
+        if len(pred_bin_feat) > 16:
+    #             print('bin_mids: ', len(bin_mids))
+    #             print('scale_factor_of_pred_points: ', len(scale_factor_of_pred_points))
+    #             print('pred_bin_feat: ', len(pred_bin_feat))
+            with warnings.catch_warnings():
+                with suppress_stdout():
+                    warnings.simplefilter("ignore")
+                    spline = SmoothBivariateSpline(binning_feat_values_pred_points, scale_factor_of_pred_points, pred_bin_feat)
+        #             print('spline: ', spline)
+                    pred_observations = spline.ev(
+                        training_data_dict['real_{}_data'.format(bin_feat_name)][data_type]['binning_feat'],
+                        training_data_dict['real_{}_data'.format(bin_feat_name)][data_type]['scale_factor']
+                    )
+
+        # make the grid 
+        min_pred_scale_factor = np.min(scale_factor_of_pred_points)
+        max_pred_scale_factor = np.max(scale_factor_of_pred_points)
+        min_pred_stellar_mass = np.min(binning_feat_values_pred_points)
+        max_pred_stellar_mass = np.max(binning_feat_values_pred_points)
+        
+        scale_factor_vals = []
+        stellar_mass_vals = []
+        for i in np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points):
+            for j in np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points):
+                scale_factor_vals.append(i)
+                stellar_mass_vals.append(j)
+        pred_vals = spline.ev(x_points, y_points)
+
+        return [scale_factor_vals, stellar_mass_vals, pred_vals, obs_vals, 
+                training_data_dict['real_{}_data'.format(bin_feat_name)][data_type][bin_feat_name]]
+    
+    else: # use mock observations
+        pass
+    
+    
 def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, data_type, full_range, real_obs, loss_dict=None):
             
     pred_bin_feat_dists = []
@@ -803,15 +1027,15 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
             relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
                         
             bin_means, bin_edges, bin_numbers = binned_statistic(binning_feat[relevant_inds], bin_feat[relevant_inds], 
-                                               bins=loss_dict['nr_bins_real_obs'], statistic='mean')
-            bin_mids = np.array([(bin_edges[i+1] + bin_edges[i])/2 for i in range(loss_dict['nr_bins_real_obs'])])
+                                               bins=loss_dict['stellar_mass_bins'], statistic='mean')
+            bin_mids = np.array([(bin_edges[i+1] + bin_edges[i])/2 for i in range(len(bin_means))])
 #             print('bin edges: ', bin_edges)
 #             print(bin_feat_name, 'bin mids: ', bin_mids)
 #             print('predicted stellar masses: ', binning_feat[relevant_inds])
 #             print('number of bins: ', loss_dict['nr_bins_real_obs'])
 
             if bin_feat_name == 'smf':
-                bin_counts = [np.sum(bin_numbers == i) for i in range(1, loss_dict['nr_bins_real_obs']+1)]
+                bin_counts = [np.sum(bin_numbers == i) for i in range(1, len(bin_means)+1)]
                 bin_counts = np.array(bin_counts, dtype=np.float)
                 nonzero_inds = np.nonzero(bin_counts)
                 bin_counts = bin_counts[nonzero_inds]
@@ -837,7 +1061,7 @@ def binned_dist_func(training_data_dict, binning_feat, bin_feat, bin_feat_name, 
 
                 pred_bin_feat_dist = []
                 nonzero_inds = []
-                for bin_num in range(1, loss_dict['nr_bins_real_obs']+1):
+                for bin_num in range(1, len(bin_means)+1):
 
                     if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
                         fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
@@ -1165,6 +1389,20 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
         loss /= (loss_dict['ssfr_weight'] + loss_dict['smf_weight'] + loss_dict['fq_weight'] + loss_dict['shm_weight'])
     
         return loss
+    
+    
+def spline_plots(model, training_data_dict, real_obs=True, csfrd_only=False, clustering_only=False, data_type='train', 
+                 full_range=False, loss_dict=None):
+    
+    if real_obs:
+        
+        
+        
+        
+        
+        
+    else:
+        pass
 
 
 def plots_obs_stats(model, training_data_dict, real_obs=True, csfrd_only=False, clustering_only=False, data_type='train', 
