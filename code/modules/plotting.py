@@ -3,9 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from data_processing import predict_points, convert_units, get_unit_dict
-from observational_data_management import loss_func_obs_stats, plots_obs_stats
+from mpl_toolkits.mplot3d import Axes3D
+from observational_data_management import loss_func_obs_stats, plots_obs_stats, spline_plots
 from scipy import stats
 import corner
+from matplotlib import cm
+import pickle
 
 def get_pred_vs_real_scatterplot(model, training_data_dict, unit_dict, data_keys, predicted_feat, supervised_pso=False, 
                                  galaxies=None, redshifts='all', title=None, data_type='test', predicted_points=None, 
@@ -1259,7 +1262,8 @@ def get_clustering_plot_obs(model, training_data_dict, redshift=0, galaxies=None
     function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
                                     loss_dict=loss_dict, clustering_only=True)
         
-    (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering']
+    (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering'] # values in log(Mpc/h)
+    
 
     global_ymin = float('Inf')
     global_ymax = -float('Inf')
@@ -1267,10 +1271,13 @@ def get_clustering_plot_obs(model, training_data_dict, redshift=0, galaxies=None
 
     fig = plt.figure(figsize=(10,15))
     for i_mass_bin in range(len(true_wp)):
+        
+        # plot wp in non-logged units, to conform to the emerge paper standard
+        pred_wp[i_mass_bin] = np.power(10, pred_wp[i_mass_bin])
+        true_wp[i_mass_bin] = np.power(10, true_wp[i_mass_bin])
+        obs_errors_wp[i_mass_bin] = np.power(10, obs_errors_wp[i_mass_bin])
+        
         ax = plt.subplot(len(true_wp), 1, i_mass_bin+1)
-#             print('values: ', true_wp[i_mass_bin])
-#             print('errors: ', obs_errors_wp[i_mass_bin])
-#             print('preds: ', pred_wp[i_mass_bin])
         obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
                                  markersize=3, capsize=5)
         if list(pred_wp[i_mass_bin]):
@@ -1391,9 +1398,105 @@ def get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=0, galaxies=Non
         return fig
     
     
-def get_ssfr_smf_fq_surface_plot(model, training_data_dict, galaxies=None, title=None, 
-                                 data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
-                                 loss_dict=None): 
+def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=None, data_type='test', save=False, file_path=None, 
+                                 dpi=100, running_from_script=False): 
+    
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
+        
+    unit_dict = get_unit_dict()
+    function_dict = spline_plots(model, training_data_dict, real_obs=True, data_type=data_type, loss_dict=loss_dict)        
+        
+    (scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, 
+     scale_factors_grid_vals_ssfr, grid_vals_ssfr) = function_dict['ssfr']
+    (scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, 
+     scale_factors_grid_vals_smf, grid_vals_smf) = function_dict['smf']
+    (scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, 
+     scale_factors_grid_vals_fq, grid_vals_fq) = function_dict['fq']
+
+    plot_names = ['ssfr', 'smf', 'fq']
+    grid_scale_factor_data = [scale_factors_grid_vals_ssfr, scale_factors_grid_vals_smf, scale_factors_grid_vals_fq]
+    grid_stellar_mass_data = [masses_grid_vals_ssfr, masses_grid_vals_smf, masses_grid_vals_fq]
+    pred_grid_data = [grid_vals_ssfr, grid_vals_smf, grid_vals_fq]
+    
+    scatter_scale_factor_data = [scatter_scale_factors_ssfr, scatter_scale_factors_smf, scatter_scale_factors_fq]
+    scatter_stellar_mass_data = [scatter_stellar_masses_ssfr, scatter_stellar_masses_smf, scatter_stellar_masses_fq]
+    pred_scatter_data = [scatter_pred_ssfr, scatter_pred_smf, scatter_pred_fq]
+    
+    obs_scale_factors = [
+        training_data_dict['real_ssfr_data'][data_type]['scale_factor'], 
+        training_data_dict['real_smf_data'][data_type]['scale_factor'], 
+        training_data_dict['real_fq_data'][data_type]['scale_factor']
+    ]
+    obs_stellar_masses = [
+        training_data_dict['real_ssfr_data'][data_type]['stellar_mass'], 
+        training_data_dict['real_smf_data'][data_type]['stellar_mass'], 
+        training_data_dict['real_fq_data'][data_type]['stellar_mass']
+    ]
+    obs_data = [
+        training_data_dict['real_ssfr_data'][data_type]['ssfr'], 
+        training_data_dict['real_smf_data'][data_type]['smf'], 
+        training_data_dict['real_fq_data'][data_type]['fq']
+    ]
+
+    obs_errors = [
+        training_data_dict['real_ssfr_data'][data_type]['error'], 
+        training_data_dict['real_smf_data'][data_type]['error'], 
+        training_data_dict['real_fq_data'][data_type]['error']
+    ]
+    
+    x_label = 'a'
+    y_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
+    z_labels = [
+        'log($[{}])$'.format(unit_dict['SSFR']),
+        'log($[{}])$'.format(unit_dict['SMF']),
+        '${}$'.format(unit_dict['FQ']),
+    ]
+                                   
+    fig = plt.figure(figsize=(20,15))
+    for i in range(3):
+        ax = plt.subplot(2,2,i+1, projection='3d')
+                                   
+#         sc = ax.scatter(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], c='b', s=3)
+        sc = ax.scatter(obs_scale_factors[i], obs_stellar_masses[i], obs_data[i], c='r', s=5)
+        
+        surf = ax.plot_surface(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], 
+                               cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        
+        fig.colorbar(surf, shrink=.7, aspect=10)
+                                   
+                                   
+        ax.set_xlabel(x_label, fontsize=15)
+        ax.set_ylabel(y_label, fontsize=15)
+
+        if i == 2:
+            location = 'upper left'
+        else:
+            location = 'upper right'
+
+        ax.set_title(plot_names[i], fontsize=20)
+
+#         ax.legend(['DNN', 'Observational data'], fontsize='xx-large') 
+
+    if title is not None:
+        plt.suptitle(title, y=.96, fontsize=20)
+
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+        
+        pickle.dump({
+            'masses': grid_stellar_mass_data,
+            'scale_factors': grid_scale_factor_data,
+            'pred_values': pred_grid_data, 
+            'obs_masses': obs_stellar_masses,
+            'obs_scale_factors': obs_scale_factors,
+            'obs_data': obs_data        
+        }, open(file_path[:-3] + 'pickle','wb'))
+    else:
+        return fig
     
     
     

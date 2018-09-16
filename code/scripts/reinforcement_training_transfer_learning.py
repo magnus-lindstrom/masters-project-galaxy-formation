@@ -21,8 +21,8 @@ real_observations = True
 
 verbatim = True
 
-test = True
-pretrained_network_name = '8x8_all-points_redshifts00-01-02-05-10_train-test-val080-020-000_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_val_score6.50e-07'
+test = False
+pretrained_network_name = '8x8_all-points_redshifts00-01-02-05-10_train-test-val080-020-000_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_val_score5.85e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = {'train': True, 'val': False} # should figures using the <mode> weights predicting on <mode> data be drawn?
 
@@ -46,7 +46,7 @@ loss_dict = {
 }
 
 ### PSO parameters
-nr_processes = 30
+nr_processes = 25
 nr_iterations = 2000
 std_penalty = False
 min_std_tol = 0.01 # minimum allowed std for any parameter
@@ -65,10 +65,11 @@ if test:
     network_name = 'testing'
 else:
     network_name = pretrained_network_name
-    weight_string = '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), str(loss_dict['smf_weight']), 
-                              str(loss_dict['shm_weight'])])
+    weight_string = 'fq-ssfr-smf-csfrd-wp_' + '-'.join([str(loss_dict['fq_weight']), str(loss_dict['ssfr_weight']), 
+                                                        str(loss_dict['smf_weight']), str(loss_dict['csfrd_weight']), 
+                                                        str(loss_dict['clustering_weight'])])
     network_name += '__' + weight_string
-    if pro_args['no_validation']:
+    if pso_args['no_validation']:
         network_name += '_noVal'
     else:
         network_name += '_withVal'

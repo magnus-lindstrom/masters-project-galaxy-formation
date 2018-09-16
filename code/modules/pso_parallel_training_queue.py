@@ -12,7 +12,7 @@ import pickle
 from model_setup import *
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
-from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs
+from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs, get_ssfr_smf_fq_surface_plot
 from data_processing import get_weights, predict_points
 from observational_data_management import plots_obs_stats, loss_func_obs_stats
 
@@ -325,10 +325,10 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
                             print('model could not be saved')
                 
                 if self.no_validation:
-                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}'.format(
+                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.6e}'.format(
                           datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result)
                 else:
-                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.3e}, Val: {:.3e}'.format(
+                    update_message = '{}  Iteration {:4d}, particle {:2d}, new swarm best. Train: {:.6e}, Val: {:.6e}'.format(
                           datetime.datetime.now().strftime("%H:%M:%S"), iteration, i_particle, result, val_score)
                 if self.verbatim:
                     print(update_message)
@@ -621,21 +621,27 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
         weight_mat_list = get_weights(position, weight_shapes)
         model.set_weights(weight_mat_list)
         
-        if real_obs: # first plot contains only csfrd, which is not redshift specific
+        if real_obs: 
             title = 'Iteration {}, best {} weights, {} data points shown'.format(iteration, data_type, data_type)
+            # first plot is a surface plot of the ssfr, fq and smf. not redshift dependent
+            fig_surface_plot_file_path = '{}figures_{}_weights/{}_data/all_losses/surf/iteration_{}.png'.format(
+                model_path, data_type, data_type, iteration
+            )
+            get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=title, data_type=data_type, save=True, 
+                                         file_path=fig_surface_plot_file_path, running_from_script=True)
+            # second plot contains only csfrd, which is not redshift specific
             fig_csfrd_file_path = '{}figures_{}_weights/{}_data/all_losses/csfrd/iteration_{}.png'.format(
                 model_path, data_type, data_type, iteration
             )
             get_csfrd_plot_obs(model, training_data_dict, title=title, data_type=data_type, 
                               save=True, file_path=fig_csfrd_file_path, running_from_script=True, loss_dict=loss_dict)
-            
-        if real_obs: # second plot is of the projected correlation function, also not redshift specific
-            title = 'Iteration {}, best {} weights, {} data points shown'.format(iteration, data_type, data_type)
+            # third plot is of the projected correlation function, also not redshift specific
             fig_wp_file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{}.png'.format(
                 model_path, data_type, data_type, iteration
             )
             get_clustering_plot_obs(model, training_data_dict, title=title, data_type=data_type, 
                                     save=True, file_path=fig_wp_file_path, running_from_script=True, loss_dict=loss_dict)
+            
             
         for redshift in training_data_dict['unique_redshifts']:
         
@@ -645,7 +651,7 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                 model_path, data_type, data_type, redshift*10, iteration
             )
             if real_obs:
-                # second plot contains redshift specific quantities
+                # fourth plot contains redshift specific quantities
                 get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=redshift, title=title, data_type=data_type, 
                                          save=True, file_path=fig_file_path, running_from_script=True, loss_dict=loss_dict)
             else:
