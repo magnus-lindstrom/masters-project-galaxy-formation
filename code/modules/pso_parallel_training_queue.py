@@ -750,9 +750,10 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
         model.set_weights(weight_mat_list)
         
         if dictionary['real_obs']: 
-            title = 'Iteration {:d}-{:d}, {} data points shown'.format(
-                dictionary['restart_counter'], dictionary['iteration'], dictionary['data_type']
-            )
+#             title = 'Iteration {:d}-{:d}, {} data points shown'.format(
+#                 dictionary['restart_counter'], dictionary['iteration'], dictionary['data_type']
+#             )
+            title = None
             if 'triple_surf' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/surf/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
@@ -779,8 +780,8 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                get_csfrd_plot_obs(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
-                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict, emerge_format=True)
+                ssfr_emerge_plot(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                                 save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             if 'wp' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 

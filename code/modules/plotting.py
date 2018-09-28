@@ -2,13 +2,16 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from data_processing import predict_points, convert_units, get_unit_dict
+from data_processing import predict_points, convert_units, get_unit_dict, scale_from_redshift, redshift_from_scale
 from mpl_toolkits.mplot3d import Axes3D
-from observational_data_management import loss_func_obs_stats, plots_obs_stats, spline_plots
+from observational_data_management import loss_func_obs_stats, plots_obs_stats, spline_plots, get_lines_from_splined_surface
 from scipy import stats
 import corner
 from matplotlib import cm
 import pickle
+
+DNN_PRED_COLOR = 'xkcd:orange'
+EMERGE_PRED_COLOR = 'xkcd:blue'
 
 def get_pred_vs_real_scatterplot(model, training_data_dict, predicted_feat, supervised_pso=False, 
                                  galaxies=None, redshifts='all', title=None, data_type='test', predicted_points=None, 
@@ -1250,14 +1253,28 @@ def get_csfrd_plot_obs(model, training_data_dict, redshift=0, galaxies=None, tit
 
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
-    ax.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
-    ax.plot(pred_bin_centers_csfrd, pred_csfrd)
-    ax.set_xlabel('z', fontsize=15)
-    ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
-    ax.tick_params(labelsize=20)
+    
     
     if emerge_format:
-        ax.set_xticks(np.arange(0, 11))
+        min_redshift = np.min(pred_bin_centers_csfrd)
+        max_redshift = np.max(pred_bin_centers_csfrd)
+        
+        ax.errorbar(obs_bin_centers_csfrd+1, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+        ax.plot(pred_bin_centers_csfrd+1, pred_csfrd)
+        ax.set_xscale('log')
+        ax.set_xticks(np.arange(min_redshift,max_redshift) + 1)
+        ax.set_xticklabels(np.arange(min_redshift, max_redshift, dtype=np.int16))
+        
+        ax.set_xlabel('z', fontsize=15)
+        ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+        ax.tick_params(labelsize=20)
+        
+    else:
+        ax.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+        ax.plot(pred_bin_centers_csfrd, pred_csfrd)
+        ax.set_xlabel('z', fontsize=15)
+        ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+        ax.tick_params(labelsize=20)
         
     if title is not None:
         plt.title(title, fontsize=20)
@@ -1520,12 +1537,117 @@ def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=Non
         return fig
     
     
-def ssfr_emerge_plot(model, training_data_dict, title=title, data_type=dictionary['data_type'], save=True, file_path=file_path, 
-                     running_from_script=True, loss_dict=loss_dict):
+def ssfr_emerge_plot(model, training_data_dict, title=None, data_type='train', save=False, file_path='', 
+                     running_from_script=False, loss_dict=None, dex_offset=0.3, fontsize=20):
+    unit_dict = get_unit_dict()
     
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
+    masses_of_lines = [8.5, 9.5, 10.5, 11.5]
+    ssfr_preds, scale_factors = get_lines_from_splined_surface(model, training_data_dict, 'ssfr', masses=masses_of_lines, 
+                                                               data_type='train', loss_dict=loss_dict)
+    redshifts = redshift_from_scale(scale_factors)
+    min_redshift = np.min(redshifts)
+    max_redshift = np.max(redshifts)
+    
+    global_xmin = float('Inf')
+    global_xmax = -float('Inf')
+    global_ymin = float('Inf')
+    global_ymax = -float('Inf')
+    ax_list = []
+            
+    n_fig_cols = 2
+    n_fig_rows = 2
+    fig = plt.figure(figsize=(20,15))
+    
+    for i_mass in range(4):
+        upper_mass = masses_of_lines[i_mass] + dex_offset
+        lower_mass = masses_of_lines[i_mass] - dex_offset
+        relevant_obs_data_point_inds = []
+        
+        for i_point in range(len(training_data_dict['real_ssfr_data'][data_type]['ssfr'])):
+            
+            if (
+                training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] <= upper_mass 
+                and
+                training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] >= lower_mass 
+            ):
+                relevant_obs_data_point_inds.append(i_point)
+                
+        obs_redshifts = redshift_from_scale(
+            np.array(training_data_dict['real_ssfr_data'][data_type]['scale_factor'])[relevant_obs_data_point_inds]
+        )
+        obs_ssfr = np.array(training_data_dict['real_ssfr_data'][data_type]['ssfr'])[relevant_obs_data_point_inds]
+        obs_error = np.array(training_data_dict['real_ssfr_data'][data_type]['error'])[relevant_obs_data_point_inds]
+                
+        ax = plt.subplot(n_fig_rows, n_fig_cols, i_mass+1)
+        dnn_handle = ax.plot(redshifts + 1, ssfr_preds[i_mass], color=DNN_PRED_COLOR)
+        obs_errs_handle = ax.errorbar(obs_redshifts + 1, obs_ssfr, yerr=obs_error, fmt = 'bo', capsize=5)
+        
+        ax.set_xscale('log')
+        ax.set_xticks(np.arange(min_redshift,max_redshift) + 1)
+        ax.set_xticklabels(np.arange(min_redshift, max_redshift, dtype=np.int16))
+        ax.tick_params(labelsize=fontsize)
+
+        ax.set_ylabel('$log_{{10}}(sSFR/yr^{{-1}})$', fontsize=fontsize)
+        ax.set_xlabel('z', fontsize=fontsize)
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+        if xmin < global_xmin:
+            global_xmin = xmin
+        if xmax > global_xmax:
+            global_xmax = xmax
+        if ymin < global_ymin:
+            global_ymin = ymin
+        if ymax > global_ymax:
+            global_ymax = ymax
+  #      ax.legend(['Emerge', 'DNN'], loc='upper left')
+        ax_list.append(ax)
+    
+    fig.subplots_adjust(hspace=0, wspace=0)
+    
+    for i_ax, ax in enumerate(ax_list):
+        
+        # enable upper ticks as well as right ticks
+        ax.tick_params(axis='x', top=True)
+        ax.tick_params(axis='y', right=True)
+        # turn off x-labels for all but the last subplots
+        if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+            ax.set_xlabel('')
+        if i_ax % n_fig_cols is not 0:
+            ax.set_ylabel('')
+            ax.set_yticklabels([])
+        # set the lims to be the global max/min
+        ax.set_ylim(bottom=global_ymin, top=global_ymax)
+        ax.set_xlim(left=global_xmin, right=global_xmax)
+        # make sure the ticks are on the inside and the numbers are on the outside of the plots
+        ax.tick_params(axis="y",direction="in", pad=10)
+        ax.tick_params(axis="x",direction="in", pad=10)
+        # display mass inside the plots
+        ax.text(.3, .9, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), fontsize=fontsize, 
+                transform = ax.transAxes, horizontalalignment='center') 
+
+    if title is not None:
+        fig.suptitle(title, y=.93, fontsize=20)
+
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+        
+        pickle.dump({
+            'masses': np.array(grid_stellar_mass_data),
+            'scale_factors': np.array(grid_scale_factor_data),
+            'pred_values': np.array(pred_grid_data), 
+            'obs_masses': np.array(obs_stellar_masses),
+            'obs_scale_factors': np.array(obs_scale_factors),
+            'obs_data': np.array(obs_data),
+            'obs_errors': np.array(obs_errors)
+        }, open(file_path[:-3] + 'pickle','wb'))
+    else:
+        return fig        
     
     
     

@@ -58,9 +58,9 @@ pso_args = {
     'inertia_weight_start': 0.5,
     'inertia_weight_min': 0.3,
     'exploration_iters': 200, # nr of iteraions before the pso reaches the min val of the inertia weight
-    'patience': 30, # nr of iterations without improvement on 'patience_parameter' before training is restarted
+    'patience': 50, # nr of iterations without improvement on 'patience_parameter' before training is restarted
     'patience_parameter': 'train',
-    'patience_min_score_increase': 1e-5,
+    'patience_min_score_increase': 1e-3,
     'restart_check_interval': 1e5, # lower to start checking for low stds, not implemented for no val set atm
     'no_validation': True
 }

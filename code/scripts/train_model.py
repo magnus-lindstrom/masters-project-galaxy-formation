@@ -14,6 +14,7 @@ from model_setup import standard_network
 
 ### General parameters
 verbose = False
+run_on_cpu = True
 
 tot_nr_points = 'all' # how many examples will be used for training+validation+testing, 'all' or a number
 train_frac = 0.8
@@ -40,14 +41,17 @@ validation_data = 'val' #'val' is normally used, use 'train' to check overfittin
 
 ### Network parameters
 network_args = {        
-    'nr_hidden_layers': 6,
-    'nr_neurons_per_lay': 6,
+    'nr_hidden_layers': 5,
+    'nr_neurons_per_lay': 5,
     'input_features': input_features,
     'output_features': output_features,
     'activation_function': 'tanh', # 'tanh', 'leaky_relu'
     'output_activation': {'SFR': None, 'Stellar_mass': None},
     'reg_strength': 1e-20
 }
+
+if run_on_cpu:
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # load the selected galaxyfile
 galaxies, data_keys = load_galfiles(redshifts=redshifts, equal_numbers=same_n_points_per_redshift)
@@ -77,7 +81,10 @@ norm_scores = model.evaluate(x=training_data_dict['input_test_dict'], y=training
                              sample_weight=training_data_dict['test_weights'], verbose=verbose)
 
 ### Save the model
-redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
+if len(redshifts) == 10:
+    redshift_string = 'All'
+else:
+    redshift_string = '-'.join(['{:02.0f}'.format(red*10) for red in redshifts])
 if tot_nr_points == 'all':
     nr_points_string = 'all-points'
 else:

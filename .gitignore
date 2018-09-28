@@ -30,4 +30,5 @@ code/backpropagation_code/hyperparameter_searches/
 *pso_general_purpose_notebook_single_process.ipynb
 .astropy/
 *.pickle
+trained_networks/
 

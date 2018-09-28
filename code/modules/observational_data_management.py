@@ -936,6 +936,8 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
     """
     Function that returns predicted values of smf, ssfr or fq using bivariate spline functions between predictions.
     
+    NOTE: One and only one of either 'specific_masses', 'specific_scale_factors' or 'get_surface' needs to be specified. 
+    
     Arguments
         training_data_dict -- Need to contain 'unique_redshifts' and 'data_redshifts'.
         pred_stellar_masses -- The predicted stellar masses of all redshifts in log(stellar_mass/M_sun)
@@ -950,6 +952,10 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
     Keyword arguments
         grid_points -- Number of grid points to use in each dimension when producing a grid with predicted values for 'statistic' 
                        (default 100)
+        specific_masses -- If the output should be predictions of the statistic for a given mass, specify these masses in a list.
+                           (default None)
+        specific_scale_factors -- Same as specific masses but for scale factors. (default None)
+        get_surface -- Return the entire predicted surface
 
     """
 
@@ -1031,29 +1037,50 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
     min_pred_stellar_mass = 7 # np.min(stellar_masses_pred_points)
     max_pred_stellar_mass = 12 # np.max(stellar_masses_pred_points)
 
-    # for surface_plots
-    masses_grid_vals = np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points)
-    scale_factors_grid_vals = np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points)
-    masses_grid_vals, scale_factors_grid_vals = np.meshgrid(masses_grid_vals, scale_factors_grid_vals)
+    if (specific_masses is not None) or (specific_scale_factors is not None) or get_surface:
+        # for surface_plots
+        masses_lin_vals = np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points)
+        scale_factors_lin_vals = np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points)
+        masses_grid_vals, scale_factors_grid_vals = np.meshgrid(masses_lin_vals, scale_factors_lin_vals)
 
-    grid_shape = masses_grid_vals.shape
+        grid_shape = masses_grid_vals.shape
 
-    grid_vals = spline.ev(masses_grid_vals.flatten(), scale_factors_grid_vals.flatten()) # spline needs a 1d vector
-    grid_vals = np.reshape(grid_vals, grid_shape) # plot_surface needs a grid
+        grid_vals = spline.ev(masses_grid_vals.flatten(), scale_factors_grid_vals.flatten()) # spline needs a 1d vector
+        grid_vals = np.reshape(grid_vals, grid_shape) # plot_surface needs a grid
+        
+        if specific_masses is not None:
+            returned_lines_masses = []
+            for mass in specific_masses:
+                mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
+                returned_lines_masses.append(grid_vals[mass_ind, :])
+                
+            return [returned_lines_masses, scale_factors_lin_vals]
+                
+        if specific_scale_factors is not None:
+            returned_lines_scale_factors = []
+            for mass in specific_masses:
+                mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
+                returned_lines_scale_factors.append(grid_vals[mass_ind, :])
+                
+            return [returned_lines_scale_factors, masses_lin_vals]
+        
+        if get_surface:
+            return [masses_grid_vals, scale_factors_grid_vals, grid_vals]
+        
 
-    # for scatter_plots
-    scatter_scale_factor_vals = []
-    scatter_stellar_mass_vals = []
-    for i in np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points):
-        for j in np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points):
-            scatter_scale_factor_vals.append(i)
-            scatter_stellar_mass_vals.append(j)
-    scatter_pred_vals = spline.ev(scatter_stellar_mass_vals, scatter_scale_factor_vals)
+    # for scatter_plots. Not really used anymore
+#     scatter_scale_factor_vals = []
+#     scatter_stellar_mass_vals = []
+#     for i in np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points):
+#         for j in np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points):
+#             scatter_scale_factor_vals.append(i)
+#             scatter_stellar_mass_vals.append(j)
+#     scatter_pred_vals = spline.ev(scatter_stellar_mass_vals, scatter_scale_factor_vals)
 
 
 
-    return [scatter_scale_factor_vals, scatter_stellar_mass_vals, scatter_pred_vals, masses_grid_vals, scale_factors_grid_vals,
-            grid_vals]
+#     return [scatter_scale_factor_vals, scatter_stellar_mass_vals, scatter_pred_vals, masses_grid_vals, scale_factors_grid_vals,
+#             grid_vals]
     
     
 def binned_dist_func(training_data_dict, pred_stellar_masses, bin_feat, statistic, data_type, full_range, real_obs, 
@@ -1438,8 +1465,9 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
         return loss
     
     
-def get_splined_func(model, training_data_dict, statistic, masses=None, scale_factors=None, real_obs=True, data_type='train', 
-                     loss_dict=None, n_points=1000):
+def get_lines_from_splined_surface(model, training_data_dict, statistic, masses=None, scale_factors=None,
+                                   data_type='train', loss_dict=None, n_points=1000):
+    
     if masses is None and scale_factors is None:
         print('Either masses or scale factors have to be provided in a list')
         return
@@ -1475,39 +1503,27 @@ def get_splined_func(model, training_data_dict, statistic, masses=None, scale_fa
         sys.exit('divide by zero error while taking log')
         
     ############### mean SSFR ###############
-
     if statistic == 'ssfr':
-        scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, \
-        scale_factors_grid_vals_ssfr, grid_vals_ssfr = \
-            get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 'ssfr', data_type, loss_dict, True) 
-
+        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 'ssfr', 
+                                                                 data_type, loss_dict, specific_masses=masses, 
+                                                                 specific_scale_factors=scale_factors) 
     ############### SMF ###############  
-
-    if loss_dict['smf_weight'] > 0:
-        scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, \
-        scale_factors_grid_vals_smf, grid_vals_smf = \
-            get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, 
-                                    loss_dict, True)
-
+    if statistic == 'smf':
+        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
+                                                                 predicted_stellar_mass_log, 'smf', 
+                                                                 data_type, loss_dict, specific_masses=masses, 
+                                                                 specific_scale_factors=scale_factors)
     ############### FQ ###############
-
-    if loss_dict['fq_weight'] > 0:
-        scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, \
-        scale_factors_grid_vals_fq, grid_vals_fq = \
-            get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict, True)
-
-    return {
-        'ssfr': [scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, 
-                 scale_factors_grid_vals_ssfr, grid_vals_ssfr],
-        'smf': [scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, 
-                 scale_factors_grid_vals_smf, grid_vals_smf],
-        'fq': [scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, 
-                 scale_factors_grid_vals_fq, grid_vals_fq]
-    }
+    if statistic == 'fq':
+        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', 
+                                                                 data_type, loss_dict, specific_masses=masses, 
+                                                                 specific_scale_factors=scale_factors)
+    return [returned_lines, other_variable]
     
     
     
 def spline_plots(model, training_data_dict, real_obs=True, data_type='train', loss_dict=None):
+    # TODO: changed get_ssfr_fq_smf_splines since last use, need to modify this function
     
     np.seterr(over='raise', divide='raise')
     
