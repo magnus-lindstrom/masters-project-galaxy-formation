@@ -4,6 +4,7 @@ import json
 import sys
 import h5py
 import io
+import observational_data_management
             
 
 def get_unit_dict():
@@ -38,11 +39,21 @@ def scale_from_redshift(redshift):
     else:
         scale_factor = 1/(1+redshift)
     return scale_factor
+
+
+def add_halo_masses(galaxies, data_keys, training_data_dict):
+    
+    if 'original_halo_masses_train' in training_data_dict.keys():
+        print('already in the dictionary')
+        return
+    
+    training_data_dict['original_halo_masses_train'] = galaxies[training_data_dict['train_indices']]
+    # function under construction...
     
 
 def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
                       total_set_size=0, train_frac=0, val_frac=0, test_frac=0, pso=False, emerge_targets=False, 
-                      real_observations=False, mock_observations=False, h_0=.6781):
+                      real_observations=False, mock_observations=False, h_0=.6781, loss_dict=None):
     
     n_data_points = galaxies.shape[0]
 
@@ -138,17 +149,17 @@ def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_red
         training_data_dict['val_weights'] = val_weights
         training_data_dict['test_weights'] = test_weights
         
-    del training_data_dict["original_halo_masses_train"]
-    del training_data_dict["original_halo_masses_val"]
-    del training_data_dict["original_halo_masses_test"]
+#     del training_data_dict["original_halo_masses_train"]
+#     del training_data_dict["original_halo_masses_val"]
+#     del training_data_dict["original_halo_masses_test"]
     
     if real_observations:
         
-        training_data_dict = add_obs_data(training_data_dict, h_0, real_obs=True)
+        training_data_dict = observational_data_management.add_obs_data(training_data_dict, loss_dict, real_obs=True)
         
     if mock_observations:
         
-        training_data_dict = add_obs_data(training_data_dict, h_0, mock_obs=True)
+        training_data_dict = observational_data_management.add_obs_data(training_data_dict, loss_dict, mock_obs=True)
     
     return training_data_dict
 
@@ -321,38 +332,60 @@ def normalise_data(training_data_dict, norm, pso=False):
     return training_data_dict
 
 
+def make_all_data_train(training_data_dict):
+    
+    if 'output_train_dict' in training_data_dict.keys():
+        for key in training_data_dict['output_train_dict'].keys():
+            training_data_dict['output_train_dict'][key] = np.concatenate((training_data_dict['output_train_dict'][key], 
+                                                                           training_data_dict['output_val_dict'][key], 
+                                                                           training_data_dict['output_test_dict'][key]))
+        del training_data_dict['output_val_dict']
+        del training_data_dict['output_test_dict']
+        
+    if 'original_halo_masses_train' in training_data_dict.keys():
+        training_data_dict['original_halo_masses_train'] = np.concatenate((training_data_dict['original_halo_masses_train'], 
+                                                                           training_data_dict['original_halo_masses_val'], 
+                                                                           training_data_dict['original_halo_masses_test']))
+        del training_data_dict['original_halo_masses_val']
+        del training_data_dict['original_halo_masses_test']
+    
+    training_data_dict['train_coordinates'] = np.vstack((training_data_dict['train_coordinates'], 
+                                                        training_data_dict['val_coordinates'], 
+                                                        training_data_dict['test_coordinates']))
+    del training_data_dict['val_coordinates']
+    del training_data_dict['test_coordinates']
+
+    training_data_dict['input_train_dict']['main_input'] = np.vstack((training_data_dict['input_train_dict']['main_input'], 
+                                                                      training_data_dict['input_val_dict']['main_input'], 
+                                                                      training_data_dict['input_test_dict']['main_input']))
+    del training_data_dict['input_val_dict']
+    del training_data_dict['input_test_dict']
+
+    training_data_dict['data_redshifts']['train_data'] = np.concatenate((training_data_dict['data_redshifts']['train_data'], 
+                                                                         training_data_dict['data_redshifts']['val_data'], 
+                                                                         training_data_dict['data_redshifts']['test_data']))
+    del training_data_dict['data_redshifts']['val_data']
+    del training_data_dict['data_redshifts']['test_data']
+
+    training_data_dict['train_frac_of_tot_by_redshift'] = [1] * len(training_data_dict['train_frac_of_tot_by_redshift'])
+
+    del training_data_dict['val_frac_of_tot_by_redshift']
+    del training_data_dict['test_frac_of_tot_by_redshift']
+    
+    return training_data_dict
+
 def prune_train_data_dict_for_reinf_learn(training_data_dict, no_val=False):
     
     del training_data_dict['output_train_dict']
     del training_data_dict['output_val_dict']
     del training_data_dict['output_test_dict']
+                                                                
+    del training_data_dict["original_halo_masses_train"]
+    del training_data_dict["original_halo_masses_val"]
+    del training_data_dict["original_halo_masses_test"]
     
     if no_val:
-        training_data_dict['train_coordinates'] = np.vstack((training_data_dict['train_coordinates'], 
-                                                            training_data_dict['val_coordinates'], 
-                                                            training_data_dict['test_coordinates']))
-        del training_data_dict['val_coordinates']
-        del training_data_dict['test_coordinates']
-
-        training_data_dict['input_train_dict']['main_input'] = np.vstack((training_data_dict['input_train_dict']['main_input'], 
-                                                                          training_data_dict['input_val_dict']['main_input'], 
-                                                                          training_data_dict['input_test_dict']['main_input']))
-        del training_data_dict['input_val_dict']
-        del training_data_dict['input_test_dict']
-
-        training_data_dict['data_redshifts']['train_data'] = np.concatenate((training_data_dict['data_redshifts']['train_data'], 
-                                                                             training_data_dict['data_redshifts']['val_data'], 
-                                                                             training_data_dict['data_redshifts']['test_data']))
-        del training_data_dict['data_redshifts']['val_data']
-        del training_data_dict['data_redshifts']['test_data']
-
-        training_data_dict['train_frac_of_tot_by_redshift'] = (
-            training_data_dict['train_frac_of_tot_by_redshift'] 
-            + training_data_dict['val_frac_of_tot_by_redshift']
-            + training_data_dict['test_frac_of_tot_by_redshift']
-        )
-        del training_data_dict['val_frac_of_tot_by_redshift']
-        del training_data_dict['test_frac_of_tot_by_redshift']
+        training_data_dict = make_all_data_train(training_data_dict)
     
     return training_data_dict
 

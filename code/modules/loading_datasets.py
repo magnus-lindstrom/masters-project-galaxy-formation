@@ -107,12 +107,9 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
     
     if np.shape(galaxies)[1] == 22:
         data_keys['Environmental_density'] = 20
-        unit_dict['Environmental_density'] = 'log($M_{G}/M_{S}/Mpc^3$)'
         data_keys['Redshift'] = 21
-        unit_dict['Redshift'] = 'z'
     else:
         data_keys['Redshift'] = 20
-        unit_dict['Redshift'] = 'z'
         
     return galaxies, data_keys
 
