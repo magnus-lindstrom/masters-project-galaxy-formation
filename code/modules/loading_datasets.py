@@ -84,7 +84,7 @@ def load_single_galfile(redshift, with_densities=False, with_growth=True):
     else:
         galfile_directory = '/home/magnus/data/galcats_nonzero_sfr_no_density/'
     
-    galfile_path = galfile_directory + 'galaxies.Z{:02d}.h5'.format(redshift*10)
+    galfile_path = galfile_directory + 'galaxies.Z{:02.0f}.h5'.format(redshift*10)
     galfile = pd.read_hdf(galfile_path)
     galaxies = galfile.values
     gal_header = galfile.keys().tolist()

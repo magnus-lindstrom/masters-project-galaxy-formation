@@ -11,7 +11,7 @@ def get_unit_dict():
     
     unit_dict = {'X_pos': '', 'Y_pos': '', 'Z_pos': '', 'X_vel': '', 'Y_vel': '', 
                  'Z_vel': '', 'Halo_mass': 'M_{H}/M_{\odot}', 'Stellar_mass': r'm_{\ast}/M_{\odot}',
-                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / Mpc^{-3} dex^{-1}', 'FQ': 'f_q',
+                 'SFR': 'M_{\odot}yr^{-1}', 'SSFR': 'yr^{-1}', 'SMF': '\Phi / \text{Mpc}^{-3} dex^{-1}', 'FQ': 'f_q',
                  'Intra_cluster_mass': '', 'Halo_mass_peak': 'M_{G}/M_{\odot}', 
                  'Stellar_mass_obs': '', 'SFR_obs': '', 'Halo_radius': '', 
                  'Concentration': '', 'Halo_spin': '', 'Scale_peak_mass': 'a', 
@@ -52,7 +52,7 @@ def add_halo_masses(galaxies, data_keys, training_data_dict):
     
 
 def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_redshift=0, outputs_to_weigh=0, 
-                      total_set_size=0, train_frac=0, val_frac=0, test_frac=0, pso=False, emerge_targets=False, 
+                      total_set_size=0, train_frac=1, val_frac=0, test_frac=0, emerge_targets=False, 
                       real_observations=False, mock_observations=False, h_0=.6781, loss_dict=None):
     
     n_data_points = galaxies.shape[0]
@@ -143,8 +143,7 @@ def divide_train_data(galaxies, data_keys, network_args, redshifts, weigh_by_red
         training_data_dict['y_test'] = y_test
         
         train_weights, val_weights, test_weights = get_weights(training_data_dict, network_args['output_features'], outputs_to_weigh, 
-                                                               train_frac, val_frac, test_frac, weigh_by_redshift=weigh_by_redshift, 
-                                                               pso=pso)
+                                                               train_frac, val_frac, test_frac, weigh_by_redshift=weigh_by_redshift)
         training_data_dict['train_weights'] = train_weights
         training_data_dict['val_weights'] = val_weights
         training_data_dict['test_weights'] = test_weights
@@ -443,8 +442,7 @@ def predict_points(model, training_data_dict, original_units=True, as_lists=Fals
     return predicted_points
     
 
-def get_weights(training_data_dict, output_features, outputs_to_weigh, train_frac, val_frac, test_frac, weigh_by_redshift=False, 
-                pso=False):
+def get_weights(training_data_dict, output_features, outputs_to_weigh, train_frac, val_frac, test_frac, weigh_by_redshift=False):
     """Returns the weights needed for training with backpropagation."""
     
     unique_redshifts = training_data_dict['unique_redshifts']
@@ -511,13 +509,13 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh, train_fra
                     return
             
     
-            if pso:
-                weights_tmp = np.zeros(np.shape(training_data_dict['y_train']))
+#             if pso:
+#                 weights_tmp = np.zeros(np.shape(training_data_dict['y_train']))
 
-                for i_output, output in enumerate(weights.keys()):
-                    weights_tmp[:, i_output] = weights[output]
+#                 for i_output, output in enumerate(weights.keys()):
+#                     weights_tmp[:, i_output] = weights[output]
 
-                weights = weights_tmp
+#                 weights = weights_tmp
                 
             final_weights.append(weights)
         else:

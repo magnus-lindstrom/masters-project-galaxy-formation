@@ -23,11 +23,11 @@ verbatim = True
 
 test = False
 
-pretrained_network_name = '6x6_all-points_redshifts00-01-02-05-10-20-30-40-60-80_train-test-val080-010-010_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_test_score4.37e-07'
+pretrained_network_name = '5x5_all-points_redshiftsAll_train-test-val080-010-010_tanh_Halo_mass_peak-Scale_peak_mass-Halo_growth_rate-Halo_radius-Redshift_to_Stellar_mass-SFR_test_score5.98e-07'
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = {'train': True, 'val': False} # should figures using the <mode> weights predicting on <mode> data be drawn?
 # Which plots to create while running
-plots = ['csfrd', 'wp', 'triple_plot', 'triple_surf'] # 'csfrd', 'wp', 'triple_plot', 'triple_surf'
+plots = ['csfrd_emerge', 'ssfr_emerge', 'surf_data'] # 'csfrd', 'csfrd_emerge', 'ssfr_emerge', 'wp', 'triple_plot', 'surf_data'
 
 ### Loss parameters
 stellar_mass_bin_width = 0.2 # concerns smf, fq, ssfr losses

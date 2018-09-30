@@ -74,7 +74,8 @@ def get_max_resolvable_stellar_mass(redshifts, bin_width, box_size, min_count=10
     return max_masses
 
 
-def add_obs_data(training_data_dict, loss_dict, h_0=0.6781, real_obs=False, mock_observations=False, validation_fraction=0, box_size=200):
+def add_obs_data(training_data_dict, loss_dict, h_0=0.6781, real_obs=False, mock_observations=False, validation_fraction=0, 
+                 box_size=200):
     
     if real_obs:
         
@@ -1065,8 +1066,7 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
             return [returned_lines_scale_factors, masses_lin_vals]
         
         if get_surface:
-            return [masses_grid_vals, scale_factors_grid_vals, grid_vals]
-        
+            return [masses_grid_vals, scale_factors_grid_vals, grid_vals]        
 
     # for scatter_plots. Not really used anymore
 #     scatter_scale_factor_vals = []
@@ -1465,80 +1465,153 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
         return loss
     
     
-def get_lines_from_splined_surface(model, training_data_dict, statistic, masses=None, scale_factors=None,
-                                   data_type='train', loss_dict=None, n_points=1000):
+def get_lines_from_splined_surface(predicted_points_obj, training_data_dict, statistic, masses=None, scale_factors=None,
+                                   data_type='train', loss_dict=None, n_points=1000, multiple_models=False):
+    """
+    Returns predicted ssfr, fq or smf along at given stellar masss or scale factors.
+    
+    Arguments
+    predicted_points -- The predicted ssfr and stellar mass of one or several models. In the form of numpy array for one model or a 
+                        list of numpy arrays for several models
+    
+    """
     
     if masses is None and scale_factors is None:
         print('Either masses or scale factors have to be provided in a list')
         return
     
-    y_pred = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
-            
-    sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
-    stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
+    
+#     predicted_points = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, 
+#                                             data_type=data_type)
 
-    predicted_sfr_log = y_pred[:, sfr_index]
-    predicted_sfr_log[predicted_sfr_log < -15] = -15
-    predicted_sfr_log[predicted_sfr_log > 15] = 15
-    predicted_sfr = np.power(10, predicted_sfr_log)
-
-    predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
-    predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
-    predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
-    predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
-
-    try:
-        ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
-    except:
-        print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
-        print('predicted_sfr: ',predicted_sfr)
-        print('predicted_stellar_mass: ', predicted_stellar_mass)
-        sys.exit('overflow error while dividing')
-
-    try:
-        ssfr_log = np.log10(ssfr)
-    except:
-        print(np.dtype(ssfr[0]))
-        print('ssfr: ',ssfr)
-        sys.exit('divide by zero error while taking log')
+    if type(predicted_points_obj) is list:
+        list_of_returned_lines = []
+        list_of_vals_of_other_var = []
         
-    ############### mean SSFR ###############
-    if statistic == 'ssfr':
-        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 'ssfr', 
-                                                                 data_type, loss_dict, specific_masses=masses, 
-                                                                 specific_scale_factors=scale_factors) 
-    ############### SMF ###############  
-    if statistic == 'smf':
-        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
-                                                                 predicted_stellar_mass_log, 'smf', 
-                                                                 data_type, loss_dict, specific_masses=masses, 
-                                                                 specific_scale_factors=scale_factors)
-    ############### FQ ###############
-    if statistic == 'fq':
-        returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', 
-                                                                 data_type, loss_dict, specific_masses=masses, 
-                                                                 specific_scale_factors=scale_factors)
-    return [returned_lines, other_variable]
+        for predicted_points in predicted_points_obj:
+
+            sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+            stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
+            
+            predicted_sfr_log = predicted_points[:, sfr_index]
+            predicted_sfr_log[predicted_sfr_log < -15] = -15
+            predicted_sfr_log[predicted_sfr_log > 15] = 15
+            predicted_sfr = np.power(10, predicted_sfr_log)
+
+            predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
+            predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
+            predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
+            predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+
+            try:
+                ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+            except:
+                print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
+                print('predicted_sfr: ',predicted_sfr)
+                print('predicted_stellar_mass: ', predicted_stellar_mass)
+                sys.exit('overflow error while dividing')
+
+            try:
+                ssfr_log = np.log10(ssfr)
+            except:
+                print(np.dtype(ssfr[0]))
+                print('ssfr: ',ssfr)
+                sys.exit('divide by zero error while taking log')
+
+            ############### mean SSFR ###############
+            if statistic == 'ssfr':
+                returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 
+                                                                         'ssfr', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors) 
+            ############### SMF ###############  
+            if statistic == 'smf':
+                returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
+                                                                         predicted_stellar_mass_log, 'smf', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors)
+            ############### FQ ###############
+            if statistic == 'fq':
+                returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 
+                                                                         'fq', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors)
+            list_of_returned_lines.append(returned_lines)
+            list_of_vals_of_other_var.append(other_variable)
+            
+        return [list_of_returned_lines, list_of_vals_of_other_var]
+    
+    else: # is a numpy array
+        
+        predicted_points = predicted_points_obj
+        
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
+
+        predicted_sfr_log = predicted_points[:, sfr_index]
+        predicted_sfr_log[predicted_sfr_log < -15] = -15
+        predicted_sfr_log[predicted_sfr_log > 15] = 15
+        predicted_sfr = np.power(10, predicted_sfr_log)
+
+        predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
+        predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
+        predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
+        predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+
+        try:
+            ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+        except:
+            print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
+            print('predicted_sfr: ',predicted_sfr)
+            print('predicted_stellar_mass: ', predicted_stellar_mass)
+            sys.exit('overflow error while dividing')
+
+        try:
+            ssfr_log = np.log10(ssfr)
+        except:
+            print(np.dtype(ssfr[0]))
+            print('ssfr: ',ssfr)
+            sys.exit('divide by zero error while taking log')
+
+        ############### mean SSFR ###############
+        if statistic == 'ssfr':
+            returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 
+                                                                     'ssfr', 
+                                                                     data_type, loss_dict, specific_masses=masses, 
+                                                                     specific_scale_factors=scale_factors) 
+        ############### SMF ###############  
+        if statistic == 'smf':
+            returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
+                                                                     predicted_stellar_mass_log, 'smf', 
+                                                                     data_type, loss_dict, specific_masses=masses, 
+                                                                     specific_scale_factors=scale_factors)
+        ############### FQ ###############
+        if statistic == 'fq':
+            returned_lines, other_variable = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 
+                                                                     'fq', 
+                                                                     data_type, loss_dict, specific_masses=masses, 
+                                                                     specific_scale_factors=scale_factors)
+
+        return [returned_lines, other_variable]
     
     
-    
-def spline_plots(model, training_data_dict, real_obs=True, data_type='train', loss_dict=None):
+def spline_plots(predicted_points, training_data_dict, real_obs=True, data_type='train', loss_dict=None):
     # TODO: changed get_ssfr_fq_smf_splines since last use, need to modify this function
     
     np.seterr(over='raise', divide='raise')
     
     if real_obs:
-        y_pred = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
-            
+#         y_pred = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, data_type=data_type)
+        
         sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
-        predicted_sfr_log = y_pred[:, sfr_index]
+        predicted_sfr_log = predicted_points[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
         predicted_sfr_log[predicted_sfr_log > 15] = 15
         predicted_sfr = np.power(10, predicted_sfr_log)
 
-        predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
+        predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
         predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
         predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
         predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
@@ -1559,57 +1632,51 @@ def spline_plots(model, training_data_dict, real_obs=True, data_type='train', lo
             sys.exit('divide by zero error while taking log')
         
         ############### mean SSFR ###############
-
         if loss_dict['ssfr_weight'] > 0:
-            scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, \
-            scale_factors_grid_vals_ssfr, grid_vals_ssfr = \
-                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 'ssfr', data_type, loss_dict, True) 
+            masses_grid_vals_ssfr, scale_factors_grid_vals_ssfr, grid_vals_ssfr = \
+                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 'ssfr', data_type, loss_dict,
+                                        get_surface=True) 
 
         ############### SMF ###############  
-        
         if loss_dict['smf_weight'] > 0:
-            scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, \
-            scale_factors_grid_vals_smf, grid_vals_smf = \
-                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', data_type, 
-                                        loss_dict, True)
+            masses_grid_vals_smf, scale_factors_grid_vals_smf, grid_vals_smf = \
+                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, predicted_stellar_mass_log, 'smf', 
+                                        data_type, loss_dict, get_surface=True)
 
         ############### FQ ###############
-
         if loss_dict['fq_weight'] > 0:
-            scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, \
-            scale_factors_grid_vals_fq, grid_vals_fq = \
-                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict, True)
+            masses_grid_vals_fq, scale_factors_grid_vals_fq, grid_vals_fq = \
+                get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 'fq', data_type, loss_dict,
+                                        get_surface=True)
         
         return {
-            'ssfr': [scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, 
-                     scale_factors_grid_vals_ssfr, grid_vals_ssfr],
-            'smf': [scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, 
-                     scale_factors_grid_vals_smf, grid_vals_smf],
-            'fq': [scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, 
-                     scale_factors_grid_vals_fq, grid_vals_fq]
+            'ssfr': [masses_grid_vals_ssfr, scale_factors_grid_vals_ssfr, grid_vals_ssfr],
+            'smf': [masses_grid_vals_smf, scale_factors_grid_vals_smf, grid_vals_smf],
+            'fq': [masses_grid_vals_fq, scale_factors_grid_vals_fq, grid_vals_fq]
         }
                 
     else:
         pass
 
 
-def plots_obs_stats(model, training_data_dict, real_obs=True, csfrd_only=False, clustering_only=False, data_type='train', 
+def plots_obs_stats(predicted_points, training_data_dict, real_obs=True, csfrd_only=False, clustering_only=False, data_type='train', 
                     full_range=False, loss_dict=None):
     
     
     if real_obs:
         
-        y_pred = data_processing.predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
+#         predicted_points = data_processing.predict_points(model, training_data_dict, original_units=True, as_lists=False, 
+#                                                           data_type=data_type)
         
         sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
-        predicted_sfr_log = y_pred[:, sfr_index]
+        predicted_sfr_log = predicted_points[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
         predicted_sfr_log[predicted_sfr_log > 15] = 15
         predicted_sfr = np.power(10, predicted_sfr_log)
 
-        predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
+        predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
         predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
         predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
         predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
@@ -1682,17 +1749,17 @@ def plots_obs_stats(model, training_data_dict, real_obs=True, csfrd_only=False, 
     
     else:
         
-        y_pred = data_processing.predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
+#         y_pred = data_processing.predict_points(model, training_data_dict, original_units=True, as_lists=False, data_type=data_type)
         
         sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
         stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
 
-        predicted_sfr_log = y_pred[:, sfr_index]
+        predicted_sfr_log = predicted_points[:, sfr_index]
         predicted_sfr_log[predicted_sfr_log < -15] = -15
         predicted_sfr_log[predicted_sfr_log > 15] = 15
         predicted_sfr = np.power(10, predicted_sfr_log)
 
-        predicted_stellar_mass_log = y_pred[:, stellar_mass_index]
+        predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
         predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
         predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
         predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)

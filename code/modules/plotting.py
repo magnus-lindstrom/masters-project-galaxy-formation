@@ -121,7 +121,7 @@ def get_pred_vs_real_scatterplot(model, training_data_dict, predicted_feat, supe
     
 def get_real_vs_pred_boxplot(model, training_data_dict, predicted_feat, binning_feat, supervised_pso=False, 
                              galaxies=None, redshifts='all', nBins=8, title=None, data_type='test', predicted_points=None, 
-                             n_points=1000, n_columns=3, fontsize=20):
+                             n_columns=3, fontsize=20, ticksize=15):
     
     unit_dict = get_unit_dict()
     
@@ -135,7 +135,7 @@ def get_real_vs_pred_boxplot(model, training_data_dict, predicted_feat, binning_
         unique_redshifts = training_data_dict['unique_redshifts']
     else:
         for redshift in redshifts:
-            if redshift not in training_data_dict['redshifts']:
+            if redshift not in training_data_dict['unique_redshifts']:
                 print('The redshift {} was not used for training'.format(redshift))
                 return
         unique_redshifts = redshifts
@@ -149,7 +149,10 @@ def get_real_vs_pred_boxplot(model, training_data_dict, predicted_feat, binning_
     else:
         n_fig_cols = n_columns
         
-    fig = plt.figure(figsize=(4*n_fig_cols,4*n_fig_rows))
+    if n_fig_cols == 3:
+        fig = plt.figure(figsize=(4*n_fig_cols,4*n_fig_rows))
+    elif n_fig_cols == 2:
+        fig = plt.figure(figsize=(7*n_fig_cols,4*n_fig_rows))
     ax_list = []
     xtick_list = []
     xtick_label_list = []
@@ -243,15 +246,20 @@ def get_real_vs_pred_boxplot(model, training_data_dict, predicted_feat, binning_
         if i_red % n_fig_cols is not 0:
             ax.set_yticklabels([])
             ax.set_ylabel('')
+#         else: # 
+#             ticklabels = ax.get_yticklabels(minor=False)
+#             print(ticklabels)
+#             ticklabels[0] = ''
+#             ax.set_yticklabels(ticklabels)
             
         ax_list.append(ax)
-        
+      
     for i_ax, ax in enumerate(ax_list):
         
         # enable upper ticks as well as right ticks
         ax.tick_params(axis='x', top=True)
         ax.tick_params(axis='y', right=True)
-        # set all of the x-ticks
+        # turn on all x-ticks
         ax.set_xticks(xtick_list[i_ax], minor=False)
         ax.set_xticklabels(xtick_label_list[i_ax])
         # turn off x-labels for all but the last subplots
@@ -260,19 +268,45 @@ def get_real_vs_pred_boxplot(model, training_data_dict, predicted_feat, binning_
         # set the ylims to be the global max/min
         ax.set_ylim(bottom=global_ymin, top=global_ymax)
         # make sure the ticks are on the inside and the numbers are on the outside of the plots
-        ax.tick_params(axis="y",direction="in", pad=10)
-        ax.tick_params(axis="x",direction="in", pad=10)
+        ax.tick_params(axis="y",direction="in", pad=10, labelsize=ticksize)
+        ax.tick_params(axis="x",direction="in", pad=10, labelsize=ticksize)
         # display redshift inside the plots
         if predicted_feat == 'Stellar_mass' and binning_feat == 'Halo_mass':
-            ax.text(13, 7.5, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=fontsize)
+            ax.text(16, 7.5, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=25)
         elif predicted_feat == 'SFR' and binning_feat == 'Stellar_mass':
-            ax.text(1, 2, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=fontsize)
-
+            ax.text(1, 2, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=25)
+        # add legends in each subfigure if there are 2 columns
+        if predicted_feat == 'Stellar_mass' and binning_feat == 'Halo_mass':
+            if n_fig_cols == 2:
+                ax.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.58, .26), 
+                           fontsize=15)
+        elif predicted_feat == 'SFR' and binning_feat == 'Stellar_mass' and n_fig_cols == 2:
+            ax.legend([true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.605, .01), 
+                      fontsize=15)
+            
+            
+#             if n_fig_cols == 2 and i_ax > 3:
+#                 ax.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.58, .2), 
+#                            fontsize=15)    
+#             if n_fig_cols == 2 and i_ax <= 3:
+#                 ax.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.58, .8), 
+#                            fontsize=15)    
+                
     # eliminate space between plots
     fig.subplots_adjust(hspace=0, wspace=0)
+    
+    # remove one ytick label for visibility
+    plt.draw()
+    for i_ax, ax in enumerate(ax_list):
+        if i_ax % n_fig_cols == 0:
+            ticklabels = ax.get_yticklabels()
+            ticklabels[1].set_text('')
+            ax.set_yticklabels(ticklabels) 
+            
     # set one big legend outside the subplots
-    fig.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.48, .1), 
-               fontsize=30)
+    if n_fig_cols == 3:
+        fig.legend( [true_handle, pred_handle], ['Emerge $\pm 1 \sigma$', 'DNN $\pm 1 \sigma$'], loc = (0.48, .1), 
+                   fontsize=30)
 
     if title is not None:
         plt.title(title, x=1.5, y=4.1, fontsize=20)
@@ -533,7 +567,7 @@ def get_halo_stellar_mass_plots(model, training_data_dict, no_true_plots=False, 
 
 def get_stellar_mass_sfr_plots(model, training_data_dict, no_true_plots=False, supervised_pso=False, galaxies=None, 
                                redshifts='all', title=None, n_redshifts_per_row=2, y_min=None, y_max=None, x_min=None, 
-                               x_max=None, data_type='test', predicted_points=None, n_points=10000, fontsize=25):
+                               x_max=None, data_type='test', predicted_points=None, n_points=1000, fontsize=25):
     
     unit_dict = get_unit_dict()
     
@@ -673,7 +707,7 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, no_true_plots=False, s
         else:
             n_fig_columns = 2
 
-        fig = plt.figure(figsize=(6*n_fig_columns,4*n_fig_rows))
+        fig = plt.figure(figsize=(4*n_fig_columns,4*n_fig_rows))
         pred_ax_list = []
         true_ax_list = []
         ax_list = []
@@ -749,21 +783,32 @@ def get_stellar_mass_sfr_plots(model, training_data_dict, no_true_plots=False, s
             ax_true.set_xlim(left=global_xmin, right=global_xmax)
             ax_true.set_ylim(bottom=global_ymin, top=global_ymax)
             # make sure the ticks are on the inside and the numbers are on the outside of the plots
-            ax_pred.tick_params(axis="y",direction="in", pad=10)
-            ax_pred.tick_params(axis="x",direction="in", pad=10)
-            ax_true.tick_params(axis="y",direction="in", pad=10)
-            ax_true.tick_params(axis="x",direction="in", pad=10)
+            ax_pred.tick_params(axis="y",direction="in", pad=10, labelsize=20)
+            ax_pred.tick_params(axis="x",direction="in", pad=10, labelsize=20)
+            ax_true.tick_params(axis="y",direction="in", pad=10, labelsize=20)
+            ax_true.tick_params(axis="x",direction="in", pad=10, labelsize=20)
             # display redshift inside the plots
             ax_pred.text(.1, .8, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=fontsize, 
                          transform = ax_pred.transAxes)
             ax_true.text(.1, .8, 'z = {:2.1f}'.format(unique_redshifts[i_ax]), fontsize=fontsize, 
                          transform = ax_true.transAxes)
             # set legends
-            ax_pred.legend(['DNN'], loc=(.6,.2), fontsize=15, markerscale=7)
-            ax_true.legend(['Emerge'], loc=(.6,.2), fontsize=15, markerscale=7)
+            ax_pred.legend(['DNN'], loc=(.5,.1), fontsize=15, markerscale=7)
+            ax_true.legend(['Emerge'], loc=(.4,.1), fontsize=15, markerscale=7)
 
         # eliminate space between plots
         fig.subplots_adjust(hspace=0, wspace=0)
+        
+            # remove one ytick label for visibility
+        plt.draw()
+        for i_ax, ax in enumerate(true_ax_list):
+#             if i_ax % n_fig_cols == 0:
+            ticklabels = ax.set_yticklabels([])
+#             ticklabels[1].set_text('')
+#             ax.set_yticklabels(ticklabels) 
+        for i_ax, ax in enumerate(pred_ax_list):
+            if i_ax % (n_fig_columns/2) != 0:
+                ticklabels = ax.set_yticklabels([]) 
         if title is not None:
             plt.suptitle(title, y=.92, fontsize=1.5*fontsize)
 
@@ -1144,7 +1189,7 @@ def get_fq_plot(model, training_data_dict, galaxies=None, title=None, data_type=
         return fig
     
     
-def get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', 
+def get_smf_ssfr_fq_plot_mock_obs(predicted_points, training_data_dict, redshift=0, galaxies=None, title=None, data_type='test', 
                                   full_range=False, save=False, file_path=None, dpi=100, running_from_script=False):
     
     if running_from_script:
@@ -1152,7 +1197,8 @@ def get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=0, galaxie
     
     unit_dict = get_unit_dict()
     
-    function_dict = plots_obs_stats(model, training_data_dict, real_obs=real_obs, data_type=data_type, full_range=full_range)
+    function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=real_obs, data_type=data_type, 
+                                    full_range=full_range)
     
     redshift_index = training_data_dict['unique_redshifts'].index(redshift)
     
@@ -1232,49 +1278,108 @@ def get_smf_ssfr_fq_plot_mock_obs(model, training_data_dict, redshift=0, galaxie
         return fig
     
     
-def get_csfrd_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
-                      data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
-                      loss_dict=None, emerge_format=False):
+def get_csfrd_plot_obs(predicted_points_obj, training_data_dict, title=None, model_names=[], colors=[],
+                       data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                       loss_dict=None, emerge_format=False):
     
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
     unit_dict = get_unit_dict()
-
-    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
-                                    loss_dict=loss_dict, csfrd_only=True)
-        
-    (pred_csfrd, pred_bin_centers_csfrd) = function_dict['csfrd']
-#     (pred_csfrd, true_csfrd, pred_bin_centers_csfrd, obs_bin_centers_csfrd, obs_errors_csfrd) = function_dict['csfrd']
-    true_csfrd = training_data_dict['real_csfrd_data'][data_type]['csfrd']
-    obs_bin_centers_csfrd = training_data_dict['real_csfrd_data'][data_type]['scale_factor']
-    obs_errors_csfrd = training_data_dict['real_csfrd_data'][data_type]['error']
-    obs_bin_centers_csfrd = 1/np.array(obs_bin_centers_csfrd) - 1 # now in redshift
-    pred_bin_centers_csfrd = 1/np.array(pred_bin_centers_csfrd) - 1 # now in redshift 
-
+    
     fig = plt.figure(figsize=(12,8))
     ax = plt.subplot(111)
-    
-    
-    if emerge_format:
-        min_redshift = np.min(pred_bin_centers_csfrd)
-        max_redshift = np.max(pred_bin_centers_csfrd)
+
+    if type(predicted_points_obj) is list:
         
-        ax.errorbar(obs_bin_centers_csfrd+1, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
-        ax.plot(pred_bin_centers_csfrd+1, pred_csfrd)
-        ax.set_xscale('log')
-        ax.set_xticks(np.arange(min_redshift,max_redshift) + 1)
-        ax.set_xticklabels(np.arange(min_redshift, max_redshift, dtype=np.int16))
+        if not colors:
+            colors = ['xkcd:blue'] * len(predicted_points)
+        if not model_names:
+            model_names = ['model_{:d}'.format(i) for i in range(len(predicted_points))]
         
-        ax.set_xlabel('z', fontsize=15)
-        ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
-        ax.tick_params(labelsize=20)
+        pred_csfrd_list = []
+        pred_bin_centers_csfrd_list = []
+        for i_model in range(len(predicted_points_obj)):
+            function_dict = plots_obs_stats(predicted_points_obj[i_model], training_data_dict, real_obs=True, data_type=data_type, 
+                                            full_range=full_range, loss_dict=loss_dict, csfrd_only=True)
+            (pred_csfrd, pred_bin_centers_csfrd) = function_dict['csfrd']
+            pred_bin_centers_csfrd = 1/np.array(pred_bin_centers_csfrd) - 1 # now in redshift
+            
+            pred_csfrd_list.append(pred_csfrd)
+            pred_bin_centers_csfrd_list.append(pred_bin_centers_csfrd)
+
+    #     (pred_csfrd, true_csfrd, pred_bin_centers_csfrd, obs_bin_centers_csfrd, obs_errors_csfrd) = function_dict['csfrd']
+        true_csfrd = training_data_dict['real_csfrd_data'][data_type]['csfrd']
+        obs_bin_centers_csfrd = training_data_dict['real_csfrd_data'][data_type]['scale_factor']
+        obs_errors_csfrd = training_data_dict['real_csfrd_data'][data_type]['error']
         
-    else:
-        ax.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
-        ax.plot(pred_bin_centers_csfrd, pred_csfrd)
-        ax.set_xlabel('z', fontsize=15)
-        ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
-        ax.tick_params(labelsize=20)
+        obs_bin_centers_csfrd = 1/np.array(obs_bin_centers_csfrd) - 1 # now in redshift
+        
+        if emerge_format:
+            min_redshift = np.min(pred_bin_centers_csfrd)
+            max_redshift = np.max(pred_bin_centers_csfrd)
+
+            model_handles = []
+            for i_model in range(len(predicted_points_obj)):
+                handle, = ax.plot(pred_bin_centers_csfrd_list[i_model]+1, pred_csfrd_list[i_model])
+                model_handles.append(handle)
+            obs_handle = ax.errorbar(obs_bin_centers_csfrd+1, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+            model_handles.append(obs_handle)  
+            model_names.append('Observational data')
+            
+            ax.set_xscale('log')
+            ax.set_xticks(np.arange(min_redshift,max_redshift+1) + 1)
+            ax.set_xticklabels(np.arange(min_redshift, max_redshift+1, dtype=np.int16))
+
+            ax.set_xlabel('z', fontsize=25)
+            ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=25)
+            ax.tick_params(labelsize=20)
+            ax.legend(model_handles, model_names, fontsize=25)
+
+        else:
+            ax.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+            ax.plot(pred_bin_centers_csfrd, pred_csfrd)
+            ax.set_xlabel('z', fontsize=15)
+            ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+            ax.tick_params(labelsize=20)
+            
+    else: # just one prediction
+        print('else')
+        if not colors:
+            colors = ['xkcd:blue']
+        if not model_names:
+            model_names = ['model_0']
+            
+        function_dict = plots_obs_stats(predicted_points_obj, training_data_dict, real_obs=True, data_type=data_type, 
+                                        full_range=full_range, loss_dict=loss_dict, csfrd_only=True)
+
+        (pred_csfrd, pred_bin_centers_csfrd) = function_dict['csfrd']
+    #     (pred_csfrd, true_csfrd, pred_bin_centers_csfrd, obs_bin_centers_csfrd, obs_errors_csfrd) = function_dict['csfrd']
+        true_csfrd = training_data_dict['real_csfrd_data'][data_type]['csfrd']
+        obs_bin_centers_csfrd = training_data_dict['real_csfrd_data'][data_type]['scale_factor']
+        obs_errors_csfrd = training_data_dict['real_csfrd_data'][data_type]['error']
+        obs_bin_centers_csfrd = 1/np.array(obs_bin_centers_csfrd) - 1 # now in redshift
+        pred_bin_centers_csfrd = 1/np.array(pred_bin_centers_csfrd) - 1 # now in redshift
+
+        if emerge_format:
+            min_redshift = np.min(pred_bin_centers_csfrd)
+            max_redshift = np.max(pred_bin_centers_csfrd)
+
+            ax.errorbar(obs_bin_centers_csfrd+1, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+            ax.plot(pred_bin_centers_csfrd+1, pred_csfrd)
+            ax.set_xscale('log')
+            ax.set_xticks(np.arange(min_redshift,max_redshift+1) + 1)
+            ax.set_xticklabels(np.arange(min_redshift, max_redshift+1, dtype=np.int16))
+
+            ax.set_xlabel('z', fontsize=15)
+            ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+            ax.tick_params(labelsize=20)
+
+        else:
+            ax.errorbar(obs_bin_centers_csfrd, true_csfrd, yerr=obs_errors_csfrd, fmt='bo', markersize=3, capsize=5)
+            ax.plot(pred_bin_centers_csfrd, pred_csfrd)
+            ax.set_xlabel('z', fontsize=15)
+            ax.set_ylabel('log(${}$)'.format(unit_dict['CSFRD']), fontsize=15)
+            ax.tick_params(labelsize=20)
         
     if title is not None:
         plt.title(title, fontsize=20)
@@ -1287,16 +1392,16 @@ def get_csfrd_plot_obs(model, training_data_dict, redshift=0, galaxies=None, tit
         return fig
         
         
-def get_clustering_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
-                      data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
-                      loss_dict=None):        
+def get_clustering_plot_obs(predicted_points, training_data_dict, redshift=0, galaxies=None, title=None, 
+                            data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                            loss_dict=None):        
 
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
     unit_dict = get_unit_dict()
 
-    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
+    function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
                                     loss_dict=loss_dict, clustering_only=True)
         
     (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering'] # values in log(Mpc/h)
@@ -1367,16 +1472,16 @@ def get_clustering_plot_obs(model, training_data_dict, redshift=0, galaxies=None
         return fig
     
     
-def get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=0, galaxies=None, title=None, 
-                      data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
-                      loss_dict=None): 
+def get_ssfr_smf_fq_plot_obs(predicted_points, training_data_dict, redshift=0, galaxies=None, title=None, 
+                             data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
+                             loss_dict=None): 
             
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
     unit_dict = get_unit_dict()
 
-    function_dict = plots_obs_stats(model, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
+    function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
                                     loss_dict=loss_dict)
         
     redshift_index = training_data_dict['unique_redshifts'].index(redshift)
@@ -1407,11 +1512,11 @@ def get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=0, galaxies=Non
     for i in range(3):
         ax = plt.subplot(2,2,i+1)
 
-        plt.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r-o', markersize=8)
-        plt.errorbar(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], yerr=obs_errors[i][redshift_index], 
+        ax.plot(pred_bin_centers[i][redshift_index], pred_data[i][redshift_index], 'r-o', markersize=8)
+        ax.errorbar(obs_bin_centers[i][redshift_index], true_data[i][redshift_index], yerr=obs_errors[i][redshift_index], 
                      fmt = 'bo', capsize=5)
-        plt.xlabel(x_labels[i], fontsize=15)
-        plt.ylabel(y_labels[i], fontsize=15)
+        ax.set_xlabel(x_labels[i], fontsize=15)
+        ax.set_ylabel(y_labels[i], fontsize=15)
 
         if i == 2:
             location = 'upper left'
@@ -1435,30 +1540,22 @@ def get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=0, galaxies=Non
         return fig
     
     
-def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=None, data_type='test', save=False, file_path=None, 
-                                 dpi=100, running_from_script=False): 
+def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=None, data_type='test', save=False, 
+                                 file_path=None, dpi=100, running_from_script=False, save_data=False): 
     
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
     unit_dict = get_unit_dict()
-    function_dict = spline_plots(model, training_data_dict, real_obs=True, data_type=data_type, loss_dict=loss_dict)        
-        
-    (scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, 
-     scale_factors_grid_vals_ssfr, grid_vals_ssfr) = function_dict['ssfr']
-    (scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, 
-     scale_factors_grid_vals_smf, grid_vals_smf) = function_dict['smf']
-    (scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, 
-     scale_factors_grid_vals_fq, grid_vals_fq) = function_dict['fq']
-
-    plot_names = ['ssfr', 'smf', 'fq']
+    function_dict = spline_plots(model, training_data_dict, real_obs=True, data_type=data_type, loss_dict=loss_dict) 
+    
+    (masses_grid_vals_ssfr, scale_factors_grid_vals_ssfr, grid_vals_ssfr) = function_dict['ssfr']
+    (masses_grid_vals_smf, scale_factors_grid_vals_smf, grid_vals_smf) = function_dict['smf']
+    (masses_grid_vals_fq, scale_factors_grid_vals_fq, grid_vals_fq) = function_dict['fq']
+    
     grid_scale_factor_data = [scale_factors_grid_vals_ssfr, scale_factors_grid_vals_smf, scale_factors_grid_vals_fq]
     grid_stellar_mass_data = [masses_grid_vals_ssfr, masses_grid_vals_smf, masses_grid_vals_fq]
     pred_grid_data = [grid_vals_ssfr, grid_vals_smf, grid_vals_fq]
-    
-    scatter_scale_factor_data = [scatter_scale_factors_ssfr, scatter_scale_factors_smf, scatter_scale_factors_fq]
-    scatter_stellar_mass_data = [scatter_stellar_masses_ssfr, scatter_stellar_masses_smf, scatter_stellar_masses_fq]
-    pred_scatter_data = [scatter_pred_ssfr, scatter_pred_smf, scatter_pred_fq]
     
     obs_scale_factors = [
         training_data_dict['real_ssfr_data'][data_type]['scale_factor'], 
@@ -1482,48 +1579,8 @@ def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=Non
         training_data_dict['real_fq_data'][data_type]['error']
     ]
     
-    x_label = 'a'
-    y_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
-    z_labels = [
-        'log($[{}])$'.format(unit_dict['SSFR']),
-        'log($[{}])$'.format(unit_dict['SMF']),
-        '${}$'.format(unit_dict['FQ']),
-    ]
-                                   
-    fig = plt.figure(figsize=(20,15))
-    for i in range(3):
-        ax = plt.subplot(2,2,i+1, projection='3d')
-                                   
-#         sc = ax.scatter(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], c='b', s=3)
-        sc = ax.scatter(obs_scale_factors[i], obs_stellar_masses[i], obs_data[i], c='r', s=5)
-        
-        surf = ax.plot_surface(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], 
-                               cmap=cm.coolwarm, linewidth=0, antialiased=False)
-        
-        fig.colorbar(surf, shrink=.7, aspect=10)
-                                   
-                                   
-        ax.set_xlabel(x_label, fontsize=15)
-        ax.set_ylabel(y_label, fontsize=15)
-
-        if i == 2:
-            location = 'upper left'
-        else:
-            location = 'upper right'
-
-        ax.set_title(plot_names[i], fontsize=20)
-
-#         ax.legend(['DNN', 'Observational data'], fontsize='xx-large') 
-
-    if title is not None:
-        plt.suptitle(title, y=.96, fontsize=20)
-
-    if save:
+    if save_data:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        fig.savefig(file_path, dpi=dpi)
-        plt.close()
-        plt.clf()
-        
         pickle.dump({
             'masses': np.array(grid_stellar_mass_data),
             'scale_factors': np.array(grid_scale_factor_data),
@@ -1532,101 +1589,310 @@ def get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=Non
             'obs_scale_factors': np.array(obs_scale_factors),
             'obs_data': np.array(obs_data),
             'obs_errors': np.array(obs_errors)
-        }, open(file_path[:-3] + 'pickle','wb'))
-    else:
-        return fig
+        }, open(file_path,'wb'))
     
     
-def ssfr_emerge_plot(model, training_data_dict, title=None, data_type='train', save=False, file_path='', 
-                     running_from_script=False, loss_dict=None, dex_offset=0.3, fontsize=20):
+    
+    ### OLD code below, grids are now just saved for later examination
+#     (scatter_scale_factors_ssfr, scatter_stellar_masses_ssfr, scatter_pred_ssfr, masses_grid_vals_ssfr, 
+#      scale_factors_grid_vals_ssfr, grid_vals_ssfr) = function_dict['ssfr']
+#     (scatter_scale_factors_smf, scatter_stellar_masses_smf, scatter_pred_smf, masses_grid_vals_smf, 
+#      scale_factors_grid_vals_smf, grid_vals_smf) = function_dict['smf']
+#     (scatter_scale_factors_fq, scatter_stellar_masses_fq, scatter_pred_fq, masses_grid_vals_fq, 
+#      scale_factors_grid_vals_fq, grid_vals_fq) = function_dict['fq']
+
+#     plot_names = ['ssfr', 'smf', 'fq']
+#     grid_scale_factor_data = [scale_factors_grid_vals_ssfr, scale_factors_grid_vals_smf, scale_factors_grid_vals_fq]
+#     grid_stellar_mass_data = [masses_grid_vals_ssfr, masses_grid_vals_smf, masses_grid_vals_fq]
+#     pred_grid_data = [grid_vals_ssfr, grid_vals_smf, grid_vals_fq]
+    
+#     scatter_scale_factor_data = [scatter_scale_factors_ssfr, scatter_scale_factors_smf, scatter_scale_factors_fq]
+#     scatter_stellar_mass_data = [scatter_stellar_masses_ssfr, scatter_stellar_masses_smf, scatter_stellar_masses_fq]
+#     pred_scatter_data = [scatter_pred_ssfr, scatter_pred_smf, scatter_pred_fq]
+    
+#     obs_scale_factors = [
+#         training_data_dict['real_ssfr_data'][data_type]['scale_factor'], 
+#         training_data_dict['real_smf_data'][data_type]['scale_factor'], 
+#         training_data_dict['real_fq_data'][data_type]['scale_factor']
+#     ]
+#     obs_stellar_masses = [
+#         training_data_dict['real_ssfr_data'][data_type]['stellar_mass'], 
+#         training_data_dict['real_smf_data'][data_type]['stellar_mass'], 
+#         training_data_dict['real_fq_data'][data_type]['stellar_mass']
+#     ]
+#     obs_data = [
+#         training_data_dict['real_ssfr_data'][data_type]['ssfr'], 
+#         training_data_dict['real_smf_data'][data_type]['smf'], 
+#         training_data_dict['real_fq_data'][data_type]['fq']
+#     ]
+
+#     obs_errors = [
+#         training_data_dict['real_ssfr_data'][data_type]['error'], 
+#         training_data_dict['real_smf_data'][data_type]['error'], 
+#         training_data_dict['real_fq_data'][data_type]['error']
+#     ]
+    
+#     x_label = 'a'
+#     y_label = 'log($[{}])$'.format(unit_dict['Stellar_mass'])
+#     z_labels = [
+#         'log($[{}])$'.format(unit_dict['SSFR']),
+#         'log($[{}])$'.format(unit_dict['SMF']),
+#         '${}$'.format(unit_dict['FQ']),
+#     ]
+                                   
+#     fig = plt.figure(figsize=(20,15))
+#     for i in range(3):
+#         ax = plt.subplot(2,2,i+1, projection='3d')
+                                   
+# #         sc = ax.scatter(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], c='b', s=3)
+#         sc = ax.scatter(obs_scale_factors[i], obs_stellar_masses[i], obs_data[i], c='r', s=5)
+        
+#         surf = ax.plot_surface(grid_scale_factor_data[i], grid_stellar_mass_data[i], pred_grid_data[i], 
+#                                cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        
+#         fig.colorbar(surf, shrink=.7, aspect=10)
+                                   
+                                   
+#         ax.set_xlabel(x_label, fontsize=15)
+#         ax.set_ylabel(y_label, fontsize=15)
+
+#         if i == 2:
+#             location = 'upper left'
+#         else:
+#             location = 'upper right'
+
+#         ax.set_title(plot_names[i], fontsize=20)
+
+# #         ax.legend(['DNN', 'Observational data'], fontsize='xx-large') 
+
+#     if title is not None:
+#         plt.suptitle(title, y=.96, fontsize=20)
+
+#     if save:
+#         os.makedirs(os.path.dirname(file_path), exist_ok=True)
+#         fig.savefig(file_path, dpi=dpi)
+#         plt.close()
+#         plt.clf()
+        
+#         pickle.dump({
+#             'masses': np.array(grid_stellar_mass_data),
+#             'scale_factors': np.array(grid_scale_factor_data),
+#             'pred_values': np.array(pred_grid_data), 
+#             'obs_masses': np.array(obs_stellar_masses),
+#             'obs_scale_factors': np.array(obs_scale_factors),
+#             'obs_data': np.array(obs_data),
+#             'obs_errors': np.array(obs_errors)
+#         }, open(file_path[:-3] + 'pickle','wb'))
+#     else:
+#         return fig
+    
+    
+def ssfr_emerge_plot(predicted_points, training_data_dict, model_names=[], colors=[], title=None, data_type='train', save=False, 
+                     file_path='', running_from_script=False, loss_dict=None, dex_offset=0.3, fontsize=25, dpi=100):
+    """
+    Creates the ssfr plot from emerge paper. Possibility of having more than one line per mass bin.
+    
+    Arguments
+    predicted_points -- either a numpy array or a list of arrays with predicted points from one or more models. Make sure that the 
+                        included training data dict is applicable for all models
+    """
     unit_dict = get_unit_dict()
     
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
     masses_of_lines = [8.5, 9.5, 10.5, 11.5]
-    ssfr_preds, scale_factors = get_lines_from_splined_surface(model, training_data_dict, 'ssfr', masses=masses_of_lines, 
-                                                               data_type='train', loss_dict=loss_dict)
-    redshifts = redshift_from_scale(scale_factors)
-    min_redshift = np.min(redshifts)
-    max_redshift = np.max(redshifts)
     
-    global_xmin = float('Inf')
-    global_xmax = -float('Inf')
-    global_ymin = float('Inf')
-    global_ymax = -float('Inf')
-    ax_list = []
-            
-    n_fig_cols = 2
-    n_fig_rows = 2
-    fig = plt.figure(figsize=(20,15))
-    
-    for i_mass in range(4):
-        upper_mass = masses_of_lines[i_mass] + dex_offset
-        lower_mass = masses_of_lines[i_mass] - dex_offset
-        relevant_obs_data_point_inds = []
+    if type(predicted_points) is list:
+        ssfr_preds, scale_factors = get_lines_from_splined_surface(predicted_points, training_data_dict, 'ssfr', 
+                                                                   masses=masses_of_lines, 
+                                                                   data_type='train', loss_dict=loss_dict)
+        if not colors:
+            colors = ['xkcd:blue'] * len(predicted_points)
+        if not model_names:
+            model_names = ['model_{:d}'.format(i) for i in range(len(predicted_points))]
         
-        for i_point in range(len(training_data_dict['real_ssfr_data'][data_type]['ssfr'])):
-            
-            if (
-                training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] <= upper_mass 
-                and
-                training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] >= lower_mass 
-            ):
-                relevant_obs_data_point_inds.append(i_point)
-                
-        obs_redshifts = redshift_from_scale(
-            np.array(training_data_dict['real_ssfr_data'][data_type]['scale_factor'])[relevant_obs_data_point_inds]
-        )
-        obs_ssfr = np.array(training_data_dict['real_ssfr_data'][data_type]['ssfr'])[relevant_obs_data_point_inds]
-        obs_error = np.array(training_data_dict['real_ssfr_data'][data_type]['error'])[relevant_obs_data_point_inds]
-                
-        ax = plt.subplot(n_fig_rows, n_fig_cols, i_mass+1)
-        dnn_handle = ax.plot(redshifts + 1, ssfr_preds[i_mass], color=DNN_PRED_COLOR)
-        obs_errs_handle = ax.errorbar(obs_redshifts + 1, obs_ssfr, yerr=obs_error, fmt = 'bo', capsize=5)
-        
-        ax.set_xscale('log')
-        ax.set_xticks(np.arange(min_redshift,max_redshift) + 1)
-        ax.set_xticklabels(np.arange(min_redshift, max_redshift, dtype=np.int16))
-        ax.tick_params(labelsize=fontsize)
+        global_xmin = float('Inf')
+        global_xmax = -float('Inf')
+        global_ymin = float('Inf')
+        global_ymax = -float('Inf')
+        ax_list = []
 
-        ax.set_ylabel('$log_{{10}}(sSFR/yr^{{-1}})$', fontsize=fontsize)
-        ax.set_xlabel('z', fontsize=fontsize)
-        xmin, xmax = ax.get_xlim()
-        ymin, ymax = ax.get_ylim()
-        if xmin < global_xmin:
-            global_xmin = xmin
-        if xmax > global_xmax:
-            global_xmax = xmax
-        if ymin < global_ymin:
-            global_ymin = ymin
-        if ymax > global_ymax:
-            global_ymax = ymax
-  #      ax.legend(['Emerge', 'DNN'], loc='upper left')
-        ax_list.append(ax)
-    
-    fig.subplots_adjust(hspace=0, wspace=0)
-    
-    for i_ax, ax in enumerate(ax_list):
+        n_fig_cols = 2
+        n_fig_rows = 2
+        fig = plt.figure(figsize=(20,15))
         
-        # enable upper ticks as well as right ticks
-        ax.tick_params(axis='x', top=True)
-        ax.tick_params(axis='y', right=True)
-        # turn off x-labels for all but the last subplots
-        if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
-            ax.set_xlabel('')
-        if i_ax % n_fig_cols is not 0:
-            ax.set_ylabel('')
-            ax.set_yticklabels([])
-        # set the lims to be the global max/min
-        ax.set_ylim(bottom=global_ymin, top=global_ymax)
-        ax.set_xlim(left=global_xmin, right=global_xmax)
-        # make sure the ticks are on the inside and the numbers are on the outside of the plots
-        ax.tick_params(axis="y",direction="in", pad=10)
-        ax.tick_params(axis="x",direction="in", pad=10)
-        # display mass inside the plots
-        ax.text(.3, .9, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), fontsize=fontsize, 
-                transform = ax.transAxes, horizontalalignment='center') 
+#         for ssfr_pred, scale_facs in zip(ssfr_preds, scale_factors):
+        redshifts = []
+        for i_model in range(len(ssfr_preds)):
+            redshifts.append(redshift_from_scale(scale_factors[i_model]))
+        min_redshift = np.min(redshifts)
+        max_redshift = np.max(redshifts)
+
+        for i_mass in range(4):
+            upper_mass = masses_of_lines[i_mass] + dex_offset
+            lower_mass = masses_of_lines[i_mass] - dex_offset
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_ssfr_data'][data_type]['ssfr'])):
+
+                if (
+                    training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] <= upper_mass 
+                    and
+                    training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] >= lower_mass 
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_redshifts = redshift_from_scale(
+                np.array(training_data_dict['real_ssfr_data'][data_type]['scale_factor'])[relevant_obs_data_point_inds]
+            )
+            obs_ssfr = np.array(training_data_dict['real_ssfr_data'][data_type]['ssfr'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_ssfr_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_mass+1)
+            model_handles = []
+            for i_model in range(len(ssfr_preds)):
+                handle, = ax.plot(redshifts[i_model] + 1, ssfr_preds[i_model][i_mass], color=colors[i_model])
+                model_handles.append(handle)
+            obs_errs_handle = ax.errorbar(obs_redshifts + 1, obs_ssfr, yerr=obs_error, fmt = 'bo', capsize=5)
+            model_handles.append(obs_errs_handle)
+            model_names.append('Observational data')
+
+            ax.set_xscale('log')
+            ax.set_xticks(np.arange(min_redshift,max_redshift+1) + 1)
+            ax.set_xticklabels(np.arange(min_redshift, max_redshift+1, dtype=np.int16))
+            ax.tick_params(labelsize=fontsize)
+
+            ax.set_ylabel('$log_{{10}}(sSFR/yr^{{-1}})$', fontsize=fontsize)
+            ax.set_xlabel('z', fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+#             ax.legend(['Emerge', 'DNN'], loc='upper left')
+            ax.legend(model_handles, model_names, loc='lower right', fontsize=30)
+
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display mass inside the plots
+            ax.text(.55, .93, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), 
+                    fontsize=fontsize, 
+                    transform = ax.transAxes, horizontalalignment='center')
+                
+    else: # just one set of predicted points
+        
+        if not colors:
+            colors = ['xkcd:blue']
+        if not model_names:
+            model_names = ['model_0']
+        ssfr_preds, scale_factors = get_lines_from_splined_surface(predicted_points, training_data_dict, 'ssfr', 
+                                                                   masses=masses_of_lines, 
+                                                                   data_type='train', loss_dict=loss_dict)
+        redshifts = redshift_from_scale(scale_factors)
+        min_redshift = np.min(redshifts)
+        max_redshift = np.max(redshifts)
+
+        global_xmin = float('Inf')
+        global_xmax = -float('Inf')
+        global_ymin = float('Inf')
+        global_ymax = -float('Inf')
+        ax_list = []
+
+        n_fig_cols = 2
+        n_fig_rows = 2
+        fig = plt.figure(figsize=(20,15))
+
+        for i_mass in range(4):
+            upper_mass = masses_of_lines[i_mass] + dex_offset
+            lower_mass = masses_of_lines[i_mass] - dex_offset
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_ssfr_data'][data_type]['ssfr'])):
+
+                if (
+                    training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] <= upper_mass 
+                    and
+                    training_data_dict['real_ssfr_data'][data_type]['stellar_mass'][i_point] >= lower_mass 
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_redshifts = redshift_from_scale(
+                np.array(training_data_dict['real_ssfr_data'][data_type]['scale_factor'])[relevant_obs_data_point_inds]
+            )
+            obs_ssfr = np.array(training_data_dict['real_ssfr_data'][data_type]['ssfr'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_ssfr_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_mass+1)
+            dnn_handle = ax.plot(redshifts + 1, ssfr_preds[i_mass], color=colors[0])
+            obs_errs_handle = ax.errorbar(obs_redshifts + 1, obs_ssfr, yerr=obs_error, fmt = 'bo', capsize=5)
+
+            ax.set_xscale('log')
+            ax.set_xticks(np.arange(min_redshift,max_redshift+1) + 1)
+            ax.set_xticklabels(np.arange(min_redshift, max_redshift+1, dtype=np.int16))
+            ax.tick_params(labelsize=fontsize)
+
+            ax.set_ylabel('$log_{{10}}(sSFR/yr^{{-1}})$', fontsize=fontsize)
+            ax.set_xlabel('z', fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+            ax.legend(dnn_handle, model_names[0], loc='upper left')
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display mass inside the plots
+            ax.text(.2, .85, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), fontsize=fontsize, 
+                    transform = ax.transAxes, horizontalalignment='center') 
 
     if title is not None:
         fig.suptitle(title, y=.93, fontsize=20)
@@ -1636,16 +1902,6 @@ def ssfr_emerge_plot(model, training_data_dict, title=None, data_type='train', s
         fig.savefig(file_path, dpi=dpi)
         plt.close()
         plt.clf()
-        
-        pickle.dump({
-            'masses': np.array(grid_stellar_mass_data),
-            'scale_factors': np.array(grid_scale_factor_data),
-            'pred_values': np.array(pred_grid_data), 
-            'obs_masses': np.array(obs_stellar_masses),
-            'obs_scale_factors': np.array(obs_scale_factors),
-            'obs_data': np.array(obs_data),
-            'obs_errors': np.array(obs_errors)
-        }, open(file_path[:-3] + 'pickle','wb'))
     else:
         return fig        
     

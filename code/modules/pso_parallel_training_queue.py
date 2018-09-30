@@ -12,7 +12,8 @@ import pickle
 from model_setup import *
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
-from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs, get_ssfr_smf_fq_surface_plot
+from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs, get_ssfr_smf_fq_surface_plot, \
+                     ssfr_emerge_plot
 from data_processing import get_weights, predict_points
 from observational_data_management import plots_obs_stats, loss_func_obs_stats
 
@@ -114,7 +115,7 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         if self.start_from_pretrained_net:
             self.model_path = '{}/trained_networks/backprop_and_pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
         else:
-            self.model_path = '{}/trained_networks/backprop_and_pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
+            self.model_path = '{}/trained_networks/pso_trained/{}/{}/'.format(home_dir, self.obs_type, self.parent.name)
             
         self.pretrained_net_name = pretrained_net_name
             
@@ -447,8 +448,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         if self.pso_args['patience_parameter'] == 'val':
             if self.time_since_val_improvement > self.pso_args['patience']:
                 should_start_fresh = True
-                print('Iteration {:d}. Max nr of iterations without significant increase in validation score reached ({:d}). Restarting.'.format(iteration, self.pso_args['patience']))
-                f.write('\nIteration {:d}. Max nr of iterations without significant increase in validation score reached ({:d}). Restarting.'.format(iteration, self.pso_args['patience']))
+                print('{}  Iteration {:d}-{:4d}. Max nr of iterations without significant increase ({:.2e}) in validation score reached ({:d}). Restarting.'.format(
+                    datetime.datetime.now().strftime("%H:%M:%S"), self.restart_counter, iteration, 
+                    self.pso_args['patience_min_score_increase'], self.pso_args['patience']
+                ))
+                f.write('\n{}  Iteration {:d}-{:4d}. Max nr of iterations without significant increase ({:.2e}) in validation score reached ({:d}). Restarting.'.format(
+                    datetime.datetime.now().strftime("%H:%M:%S"), self.restart_counter, iteration, 
+                    self.pso_args['patience_min_score_increase'], self.pso_args['patience']
+                ))
                 f.flush()
 #                 training_is_done = True
 #                 end_train_message = 'Early stopping in iteration {}. Max patience for val loss improvement reached ({})'.format(
@@ -457,8 +464,14 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
         elif self.pso_args['patience_parameter'] == 'train':
             if self.time_since_train_improvement > self.pso_args['patience']:
                 should_start_fresh = True
-                print('Iteration {:d}. Max nr of iterations without significant increase in training score reached ({:d}). Restarting.'.format(iteration, self.pso_args['patience']))
-                f.write('\nIteration {:d}. Max nr of iterations without significant increase in training score reached ({:d}). Restarting.'.format(iteration, self.pso_args['patience']))
+                print('{}  Iteration {:d}-{:4d}. Max nr of iterations without significant increase ({:.2e}) in training score reached ({:d}). Restarting.'.format(
+                    datetime.datetime.now().strftime("%H:%M:%S"), self.restart_counter, iteration, 
+                    self.pso_args['patience_min_score_increase'], self.pso_args['patience']
+                ))
+                f.write('\n{}  Iteration {:d}-{:4d}. Max nr of iterations without significant increase ({:.2e}) in training score reached ({:d}). Restarting.'.format(
+                    datetime.datetime.now().strftime("%H:%M:%S"), self.restart_counter, iteration, 
+                    self.pso_args['patience_min_score_increase'], self.pso_args['patience']
+                ))
                 f.flush()
 #                 training_is_done = True
 #                 end_train_message = 'Early stopping in iteration {}. Max patience for train loss improvement reached ({})'.format(
@@ -725,14 +738,15 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
         'plots' -- keywords for the plots to be drawn. should be contained in a list
         
     plot keywords:
-        'csfrd': draws the csfrd plot
-        'csfrd_emerge': the same as csfrd, but conforming to fig4 of emerge paper
-        'ssfr_emerge': the four panel plot of ssfr shown in fig4 of emerge paper
-        'wp': draws the correlation function plot
-        'triple_plot': drawsf fq, ssfr and smf in the same figure for all snapshot redshifts, including the observational data 
-                       points with error bars
-        'triple_surf': draws surface plots of fq, ssfr and smf in the same figure. also saves the predicted function surfaces
-                       for later analysis
+        'csfrd' -- draws the csfrd plot
+        'csfrd_emerge' -- the same as csfrd, but conforming to fig4 of emerge paper
+        'ssfr_emerge' -- the four panel plot of ssfr shown in fig4 of emerge paper
+        'wp' -- draws the correlation function plot
+        'triple_plot' -- drawsf fq, ssfr and smf in the same figure for all snapshot redshifts, including the observational 
+                         data points with error bars
+        'triple_surf' -- draws surface plots of fq, ssfr and smf in the same figure. also saves the predicted function surfaces
+                         for later analysis (NO LONGER WORKING)
+        'surf_data' -- Saves the grid arrays needed for doing 3D plots.
     """
     
     input_features, output_features, nr_neurons_per_lay, nr_hidden_layers, \
@@ -754,40 +768,45 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
 #                 dictionary['restart_counter'], dictionary['iteration'], dictionary['data_type']
 #             )
             title = None
-            if 'triple_surf' in dictionary['plots']:
-                file_path = '{}figures_{}_weights/{}_data/all_losses/surf/iteration_{:d}-{:d}.png'.format(
+            predicted_points = predict_points(model, training_data_dict, original_units=False, as_lists=False, 
+                                              data_type=data_type)
+            if 'surf_data' in dictionary['plots']:
+                file_path = '{}figures_{}_weights/{}_data/all_losses/surf/iteration_{:d}-{:d}.p'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                get_ssfr_smf_fq_surface_plot(model, training_data_dict, loss_dict, title=title, data_type=dictionary['data_type'], 
-                                             save=True, file_path=file_path, running_from_script=True)
+                get_ssfr_smf_fq_surface_plot(predicted_points, training_data_dict, loss_dict, title=title, 
+                                             data_type=dictionary['data_type'], save_data=True,
+                                             file_path=file_path, running_from_script=True)
+            if 'triple_surf' in dictionary['plots']:
+                pass
             if 'csfrd' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/csfrd/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                get_csfrd_plot_obs(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
-                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
+                get_csfrd_plot_obs(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                                   save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             if 'csfrd_emerge' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/csfrd_emerge/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                get_csfrd_plot_obs(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
-                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict, emerge_format=True)
+                get_csfrd_plot_obs(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                                   save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict, emerge_format=True)
             if 'ssfr_emerge' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/ssfr_emerge/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                ssfr_emerge_plot(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                ssfr_emerge_plot(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             if 'wp' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
                     dictionary['iteration']
                 )
-                get_clustering_plot_obs(model, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                get_clustering_plot_obs(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
                                         save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             
             if 'triple_plot' in dictionary['plots']:
@@ -800,7 +819,7 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                         model_path, dictionary['data_type'], dictionary['data_type'], redshift*10, dictionary['restart_counter'], 
                         dictionary['iteration']
                     )
-                    get_ssfr_smf_fq_plot_obs(model, training_data_dict, redshift=redshift, title=title, 
+                    get_ssfr_smf_fq_plot_obs(predicted_points, training_data_dict, redshift=redshift, title=title, 
                                              data_type=dictionary['data_type'], save=True, file_path=file_path, 
                                              running_from_script=True, loss_dict=loss_dict)
                     
