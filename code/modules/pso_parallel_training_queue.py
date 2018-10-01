@@ -740,7 +740,8 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
     plot keywords:
         'csfrd' -- draws the csfrd plot
         'csfrd_emerge' -- the same as csfrd, but conforming to fig4 of emerge paper
-        'ssfr_emerge' -- the four panel plot of ssfr shown in fig4 of emerge paper
+        'ssfr_emerge' -- the four panel plot of ssfr shown in fig5 of emerge paper
+        'smf_emerge' -- recreation of fig9 from emerge paper
         'wp' -- draws the correlation function plot
         'triple_plot' -- drawsf fq, ssfr and smf in the same figure for all snapshot redshifts, including the observational 
                          data points with error bars
@@ -800,6 +801,13 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                     dictionary['iteration']
                 )
                 ssfr_emerge_plot(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
+                                 save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
+            if 'smf_emerge' in dictionary['plots']:
+                file_path = '{}figures_{}_weights/{}_data/all_losses/smf_emerge/iteration_{:d}-{:d}.png'.format(
+                    model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
+                    dictionary['iteration']
+                )
+                smf_emerge_plot(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             if 'wp' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{:d}-{:d}.png'.format(

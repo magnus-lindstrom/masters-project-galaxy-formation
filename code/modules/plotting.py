@@ -1392,74 +1392,163 @@ def get_csfrd_plot_obs(predicted_points_obj, training_data_dict, title=None, mod
         return fig
         
         
-def get_clustering_plot_obs(predicted_points, training_data_dict, redshift=0, galaxies=None, title=None, 
-                            data_type='test', full_range=False, save=False, file_path=None, dpi=100, running_from_script=False, 
-                            loss_dict=None):        
+def get_clustering_plot_obs(predicted_points_obj, training_data_dict, title=None, 
+                            data_type='test', save=False, file_path=None, dpi=100, running_from_script=False, 
+                            loss_dict=None, model_names=[], colors=[], fontsize=15):        
 
     if running_from_script:
         plt.switch_backend('agg') # otherwise it doesn't work..
         
     unit_dict = get_unit_dict()
 
-    function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=True, data_type=data_type, full_range=full_range,
-                                    loss_dict=loss_dict, clustering_only=True)
+    if type(predicted_points_obj) is list:
         
-    (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering'] # values in log(Mpc/h)
+        if not colors:
+            colors = ['xkcd:blue'] * len(predicted_points)
+        if not model_names:
+            model_names = ['model_{:d}'.format(i) for i in range(len(predicted_points))]
+        
+        global_ymin = float('Inf')
+        global_ymax = -float('Inf')
+        ax_list = []
+
+        fig = plt.figure(figsize=(10,15))
+        for i_ax in range(1, 6):
+            ax = plt.subplot(5, 1, i_ax)
+            ax_list.append(ax)
+            
+        plot_handles = []
+        for i_pred_points, predicted_points in enumerate(predicted_points_obj):
+        
+            function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=True, data_type=data_type, 
+                                            loss_dict=loss_dict, clustering_only=True)
+
+            (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering'] # values in log(Mpc/h)
+
+            for i_mass_bin in range(len(true_wp)):
+
+                ax = ax_list[i_mass_bin]
+                # plot wp in non-logged units, to conform to the emerge paper standard
+                pred_wp[i_mass_bin] = np.power(10, pred_wp[i_mass_bin])
+                true_wp[i_mass_bin] = np.power(10, true_wp[i_mass_bin])
+                
+                if i_pred_points == 0:
+                    
+                    obs_errors_wp[i_mass_bin] = np.power(10, obs_errors_wp[i_mass_bin])
+                    obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
+                                             markersize=3, capsize=5)
+                    if i_mass_bin == 0:
+                        plot_handles.append(obs_handle)
+                        model_names.append('Observational data')
+                
+                if list(pred_wp[i_mass_bin]):
+                    pred_handle, = ax.plot(rp_bin_mids, pred_wp[i_mass_bin], color=colors[i_pred_points])
+                    if i_mass_bin == 0:
+                        plot_handles.append(pred_handle)
+                ax.set_xscale('log')
+                ax.set_yscale('log')
+                ax.set_xlabel('$r_p$', fontsize=25)
+                ax.set_ylabel('$w_p$ / Mpc', fontsize=25)
+
+                ymin, ymax = ax.get_ylim()
+
+                if ymin < global_ymin:
+                    global_ymin = ymin
+                if ymax > global_ymax:
+                    global_ymax = ymax
+
+#         fig.subplots_adjust(hspace=0)
+
+#         for i_ax, ax in enumerate(ax_list):
+#             if i_ax == 0:
+#                 ax.legend(plot_handles, model_names, loc='upper right', fontsize=15)
+#             # enable upper ticks as well as right ticks
+#             ax.tick_params(axis='x', top=True)
+#             ax.tick_params(axis='y', right=True)
+#             # turn off x-labels for all but the last subplot
+#             if len(ax_list) != (i_ax+1):   
+#                 ax.set_xlabel('')
+#             # set the lims to be the global max/min
+#             ax.set_ylim(bottom=global_ymin, top=global_ymax)
+#             # make sure the ticks are on the inside and the numbers are on the outside of the plots
+#             ax.tick_params(axis="y",direction="in", pad=10)
+#             ax.tick_params(axis="x",direction="in", pad=10)
+#             # display mass bin inside the plots
+#             ax.text(
+#                 .5, .1, '{:.2f} $\leq$ $log_{{10}}([{}])$ $\leq$ {:.2f}'.format(
+#                     mass_bin_edges_wp[i_ax], unit_dict['Stellar_mass'], mass_bin_edges_wp[i_ax+1]
+#                 ), fontsize=20, transform = ax.transAxes, horizontalalignment='center'
+#             )
     
-
-    global_ymin = float('Inf')
-    global_ymax = -float('Inf')
-    ax_list = []
-
-    fig = plt.figure(figsize=(10,15))
-    for i_mass_bin in range(len(true_wp)):
+    else: # predicted_points is numpy array
+        #OBS this isn't completed yet, handles and stuff are likely not to work
         
-        # plot wp in non-logged units, to conform to the emerge paper standard
-        pred_wp[i_mass_bin] = np.power(10, pred_wp[i_mass_bin])
-        true_wp[i_mass_bin] = np.power(10, true_wp[i_mass_bin])
-        obs_errors_wp[i_mass_bin] = np.power(10, obs_errors_wp[i_mass_bin])
+        if not colors:
+            colors = ['xkcd:blue']
+        if not model_names:
+            model_names = ['model_0']
         
-        ax = plt.subplot(len(true_wp), 1, i_mass_bin+1)
-        obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
-                                 markersize=3, capsize=5)
-        if list(pred_wp[i_mass_bin]):
-            pred_handle = ax.plot(rp_bin_mids, pred_wp[i_mass_bin])
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_xlabel('$r_p$', fontsize=15)
-        ax.set_ylabel('$w_p$ / Mpc)', fontsize=15)
+        predicted_points = predicted_points_obj
+        function_dict = plots_obs_stats(predicted_points, training_data_dict, real_obs=True, data_type=data_type,
+                                        loss_dict=loss_dict, clustering_only=True)
 
-        ymin, ymax = ax.get_ylim()
+        (pred_wp, true_wp, rp_bin_mids, obs_errors_wp, mass_bin_edges_wp) = function_dict['clustering'] # values in log(Mpc/h)
 
-        if ymin < global_ymin:
-            global_ymin = ymin
-        if ymax > global_ymax:
-            global_ymax = ymax
 
-        ax_list.append(ax)
+        global_ymin = float('Inf')
+        global_ymax = -float('Inf')
+        ax_list = []
+
+        fig = plt.figure(figsize=(10,15))
+        for i_mass_bin in range(len(true_wp)):
+
+            # plot wp in non-logged units, to conform to the emerge paper standard
+            pred_wp[i_mass_bin] = np.power(10, pred_wp[i_mass_bin])
+            true_wp[i_mass_bin] = np.power(10, true_wp[i_mass_bin])
+            obs_errors_wp[i_mass_bin] = np.power(10, obs_errors_wp[i_mass_bin])
+
+            ax = plt.subplot(len(true_wp), 1, i_mass_bin+1)
+            obs_handle = ax.errorbar(rp_bin_mids, true_wp[i_mass_bin], yerr=obs_errors_wp[i_mass_bin], fmt='bo', 
+                                     markersize=3, capsize=5)
+            if list(pred_wp[i_mass_bin]):
+                pred_handle = ax.plot(rp_bin_mids, pred_wp[i_mass_bin])
+            ax.set_xscale('log')
+            ax.set_yscale('log')
+            ax.set_xlabel('$r_p$', fontsize=25)
+            ax.set_ylabel('$w_p$ / Mpc', fontsize=25)
+
+            ymin, ymax = ax.get_ylim()
+
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+
+            ax_list.append(ax)
 
     fig.subplots_adjust(hspace=0)
 
     for i_ax, ax in enumerate(ax_list):
+        if i_ax == 0:
+            ax.legend(plot_handles, model_names, loc='upper right', fontsize=15)
         # enable upper ticks as well as right ticks
         ax.tick_params(axis='x', top=True)
         ax.tick_params(axis='y', right=True)
-        # turn off x-labels for all but the last subplot
+        # turn off x-labels and ticks for all but the last subplot
         if len(ax_list) != (i_ax+1):   
             ax.set_xlabel('')
+            ax.set_xticklabels([])
         # set the lims to be the global max/min
         ax.set_ylim(bottom=global_ymin, top=global_ymax)
         # make sure the ticks are on the inside and the numbers are on the outside of the plots
-        ax.tick_params(axis="y",direction="in", pad=10)
-        ax.tick_params(axis="x",direction="in", pad=10)
+        ax.tick_params(axis="y",direction="in", pad=10, labelsize=fontsize)
+        ax.tick_params(axis="x",direction="in", pad=10, labelsize=fontsize)
         # display mass bin inside the plots
         ax.text(
             .5, .1, '{:.2f} $\leq$ $log_{{10}}([{}])$ $\leq$ {:.2f}'.format(
                 mass_bin_edges_wp[i_ax], unit_dict['Stellar_mass'], mass_bin_edges_wp[i_ax+1]
             ), fontsize=20, transform = ax.transAxes, horizontalalignment='center'
         )
-
-
 
     if title is not None:
         plt.suptitle(title, fontsize=20)
@@ -1776,7 +1865,7 @@ def ssfr_emerge_plot(predicted_points, training_data_dict, model_names=[], color
             if ymax > global_ymax:
                 global_ymax = ymax
 #             ax.legend(['Emerge', 'DNN'], loc='upper left')
-            ax.legend(model_handles, model_names, loc='lower right', fontsize=30)
+            ax.legend(model_handles, model_names, loc='lower right', fontsize=25)
 
             ax_list.append(ax)
 
@@ -1903,7 +1992,409 @@ def ssfr_emerge_plot(predicted_points, training_data_dict, model_names=[], color
         plt.close()
         plt.clf()
     else:
-        return fig        
+        return fig   
+    
+
+def smf_emerge_plot(predicted_points, training_data_dict, model_names=[], colors=[], title=None, data_type='train', save=False, 
+                     file_path='', running_from_script=False, loss_dict=None, fontsize=25, dpi=100, n_fig_cols=3):
+    """
+    Creates the smf plot from emerge paper with the possibility of having more than one line per mass bin.
+    
+    Arguments
+    predicted_points -- either a numpy array or a list of arrays with predicted points from one or more models. Make sure that the 
+                        included training data dict is applicable for all models
+    """
+    unit_dict = get_unit_dict()
+    
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
+        
+    redshift_bin_edges = [0, .2, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8]
+    scale_factor_bin_edges = scale_from_redshift(redshift_bin_edges)
+    scale_factors_of_lines = [
+        (scale_factor_bin_edges[i] + scale_factor_bin_edges[i+1])/2 for i in range(len(scale_factor_bin_edges)-1)
+    ]
+#     print('scale_factor_bin_edges: ', scale_factor_bin_edges)
+#     print('scale_factors_of_lines: ', scale_factors_of_lines)
+    
+    smf_preds, masses = get_lines_from_splined_surface(predicted_points, training_data_dict, 'smf', 
+                                                       scale_factors=scale_factors_of_lines, 
+                                                       data_type='train', loss_dict=loss_dict)
+    
+    global_xmin = float('Inf')
+    global_xmax = -float('Inf')
+    global_ymin = float('Inf')
+    global_ymax = -float('Inf')
+
+    n_fig_rows = int(np.ceil(len(scale_factors_of_lines)/n_fig_cols))
+    fig = plt.figure(figsize=(15,18))
+    ax_list = []
+    
+    if type(predicted_points) is list:
+        
+        if not colors:
+            colors = ['xkcd:blue'] * len(predicted_points)
+        if not model_names:
+            model_names = ['model_{:d}'.format(i) for i in range(len(predicted_points))]
+        
+        for i_scale, scale_factor in enumerate(scale_factors_of_lines):
+            upper_scale_factor = scale_factor_bin_edges[i_scale]
+            lower_scale_factor = scale_factor_bin_edges[i_scale+1]
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_smf_data'][data_type]['smf'])):
+
+                if (
+                    training_data_dict['real_smf_data'][data_type]['scale_factor'][i_point] <= upper_scale_factor 
+                    and
+                    training_data_dict['real_smf_data'][data_type]['scale_factor'][i_point] >= lower_scale_factor 
+                    and
+                    training_data_dict['real_smf_data'][data_type]['error'][i_point] < 2
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_masses = np.array(training_data_dict['real_smf_data'][data_type]['stellar_mass'])[relevant_obs_data_point_inds]
+            obs_smf = np.array(training_data_dict['real_smf_data'][data_type]['smf'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_smf_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_scale+1)
+            model_handles = []
+            for i_model in range(len(smf_preds)):
+                handle, = ax.plot(masses[i_model], smf_preds[i_model][i_scale], color=colors[i_model], zorder=i_model*10)
+                model_handles.append(handle)
+            obs_errs_handle = ax.errorbar(obs_masses, obs_smf, yerr=obs_error, fmt = 'bo', capsize=5, zorder=-30)
+            model_handles.append(obs_errs_handle)
+            model_names.append('Observational data')
+
+            ax.tick_params(labelsize=fontsize)
+
+#             ax.set_ylabel('$log([{}])$'.format(unit_dict['SMF']), fontsize=fontsize) # why won't this work...?
+            ax.set_ylabel('log([' + '$\Phi$' + '/Mpc' + '$^{-3} dex^{-1}$' + '])', fontsize=fontsize)
+            ax.set_xlabel('log$_{{10}}([{}])$'.format(unit_dict['Stellar_mass']), fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+            ax.legend(model_handles, model_names, loc='lower left', fontsize=15)
+
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display redshift bin inside the plots
+            ax.text(.5, .87, '{:.1f}$ \leq z \leq ${:.1f}'.format(redshift_bin_edges[i_ax], redshift_bin_edges[i_ax+1]), 
+                    fontsize=25, 
+                    transform = ax.transAxes, horizontalalignment='center')
+                
+    else: # just one set of predicted points
+        
+        if not colors:
+            colors = ['xkcd:blue']
+        if not model_names:
+            model_names = ['model_0']
+        
+
+#         for i_scale, scale_factor in enumerate(list(reversed(scale_factors_of_lines))):
+        for i_scale, scale_factor in enumerate(scale_factors_of_lines):
+            upper_scale_factor = scale_factor_bin_edges[i_scale]
+            lower_scale_factor = scale_factor_bin_edges[i_scale+1]
+#             print('scale factor {:d}: '.format(i_scale), scale_factor)
+#             print('upper_scale_factor: ', upper_scale_factor)
+#             print('lower_scale_factor: ', lower_scale_factor)
+            
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_smf_data'][data_type]['smf'])):
+                if (
+                    training_data_dict['real_smf_data'][data_type]['scale_factor'][i_point] <= upper_scale_factor 
+                    and
+                    training_data_dict['real_smf_data'][data_type]['scale_factor'][i_point] >= lower_scale_factor 
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_masses = np.array(training_data_dict['real_smf_data'][data_type]['stellar_mass'])[relevant_obs_data_point_inds]
+            obs_smf = np.array(training_data_dict['real_smf_data'][data_type]['smf'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_smf_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_scale+1)
+#             print('masses: ', masses)
+#             print('smf_preds: ', smf_preds[i_scale])
+            model_handle = ax.plot(masses, smf_preds[i_scale], color=colors[0])
+            obs_errs_handle = ax.errorbar(obs_masses, obs_smf, yerr=obs_error, fmt = 'bo', capsize=5)
+
+            ax.tick_params(labelsize=fontsize)
+
+            ax.set_ylabel('log($[{}])$'.format(unit_dict['SMF']), fontsize=fontsize)
+            ax.set_xlabel('log$_{{10}}([{}])'.format(unit_dict['Stellar_mass']), fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+            ax.legend(model_handle, model_names[0], loc='lower left')
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display redshift bin inside the plots
+#             ax.text(.2, .85, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), fontsize=fontsize, 
+#                     transform = ax.transAxes, horizontalalignment='center') 
+
+    if title is not None:
+        fig.suptitle(title, y=.93, fontsize=20)
+
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+    else:
+        return fig
+    
+    
+def fq_emerge_plot(predicted_points, training_data_dict, model_names=[], colors=[], title=None, data_type='train', save=False, 
+                     file_path='', running_from_script=False, loss_dict=None, fontsize=25, dpi=100, n_fig_cols=3):
+    """
+    Creates the fq plot from emerge paper (fig7) with the possibility of having more than one line per redshift bin.
+    
+    Arguments
+    predicted_points -- either a numpy array or a list of arrays with predicted points from one or more models. Make sure that the 
+                        included training data dict is applicable for all models
+    """
+    unit_dict = get_unit_dict()
+    
+    if running_from_script:
+        plt.switch_backend('agg') # otherwise it doesn't work..
+        
+    redshift_bin_edges = [0, .5, 1, 1.5, 2, 3, 4]
+    scale_factor_bin_edges = scale_from_redshift(redshift_bin_edges)
+    scale_factors_of_lines = [
+        (scale_factor_bin_edges[i] + scale_factor_bin_edges[i+1])/2 for i in range(len(scale_factor_bin_edges)-1)
+    ]
+#     print('scale_factor_bin_edges: ', scale_factor_bin_edges)
+#     print('scale_factors_of_lines: ', scale_factors_of_lines)
+    
+    fq_preds, masses = get_lines_from_splined_surface(predicted_points, training_data_dict, 'fq', 
+                                                       scale_factors=scale_factors_of_lines, 
+                                                       data_type='train', loss_dict=loss_dict)
+    
+    global_xmin = float('Inf')
+    global_xmax = -float('Inf')
+    global_ymin = float('Inf')
+    global_ymax = -float('Inf')
+
+    n_fig_rows = int(np.ceil(len(scale_factors_of_lines)/n_fig_cols))
+    fig = plt.figure(figsize=(15,10))
+    ax_list = []
+    
+    if type(predicted_points) is list:
+        
+        if not colors:
+            colors = ['xkcd:blue'] * len(predicted_points)
+        if not model_names:
+            model_names = ['model_{:d}'.format(i) for i in range(len(predicted_points))]
+        
+        for i_scale, scale_factor in enumerate(scale_factors_of_lines):
+            upper_scale_factor = scale_factor_bin_edges[i_scale]
+            lower_scale_factor = scale_factor_bin_edges[i_scale+1]
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_fq_data'][data_type]['fq'])):
+
+                if (
+                    training_data_dict['real_fq_data'][data_type]['scale_factor'][i_point] <= upper_scale_factor 
+                    and
+                    training_data_dict['real_fq_data'][data_type]['scale_factor'][i_point] >= lower_scale_factor 
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_masses = np.array(training_data_dict['real_fq_data'][data_type]['stellar_mass'])[relevant_obs_data_point_inds]
+            obs_fq = np.array(training_data_dict['real_fq_data'][data_type]['fq'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_fq_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_scale+1)
+            model_handles = []
+            for i_model in range(len(fq_preds)):
+                handle, = ax.plot(masses[i_model], fq_preds[i_model][i_scale], color=colors[i_model], zorder=i_model+1)
+                model_handles.append(handle)
+            obs_errs_handle = ax.errorbar(obs_masses, obs_fq, yerr=obs_error, fmt = 'bo', capsize=5, zorder=-30)
+            model_handles.append(obs_errs_handle)
+            model_names.append('Observational data')
+
+            ax.tick_params(labelsize=fontsize)
+
+#             ax.set_ylabel('$log([{}])$'.format(unit_dict['SMF']), fontsize=fontsize) # why won't this work...?
+            ax.set_ylabel('$f_q$', fontsize=fontsize)
+            ax.set_xlabel('log$_{{10}}([{}])$'.format(unit_dict['Stellar_mass']), fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+            ax.legend(model_handles, model_names, loc='lower left', fontsize=15)
+
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display redshift bin inside the plots
+            ax.text(.5, .87, '{:.1f}$ \leq z \leq ${:.1f}'.format(redshift_bin_edges[i_ax], redshift_bin_edges[i_ax+1]), 
+                    fontsize=25, 
+                    transform = ax.transAxes, horizontalalignment='center')
+                
+    else: # just one set of predicted points
+        
+        if not colors:
+            colors = ['xkcd:blue']
+        if not model_names:
+            model_names = ['model_0']
+        
+
+#         for i_scale, scale_factor in enumerate(list(reversed(scale_factors_of_lines))):
+        for i_scale, scale_factor in enumerate(scale_factors_of_lines):
+            upper_scale_factor = scale_factor_bin_edges[i_scale]
+            lower_scale_factor = scale_factor_bin_edges[i_scale+1]
+#             print('scale factor {:d}: '.format(i_scale), scale_factor)
+#             print('upper_scale_factor: ', upper_scale_factor)
+#             print('lower_scale_factor: ', lower_scale_factor)
+            
+            relevant_obs_data_point_inds = []
+
+            for i_point in range(len(training_data_dict['real_fq_data'][data_type]['fq'])):
+                if (
+                    training_data_dict['real_fq_data'][data_type]['scale_factor'][i_point] <= upper_scale_factor 
+                    and
+                    training_data_dict['real_fq_data'][data_type]['scale_factor'][i_point] >= lower_scale_factor 
+                ):
+                    relevant_obs_data_point_inds.append(i_point)
+
+            obs_masses = np.array(training_data_dict['real_fq_data'][data_type]['stellar_mass'])[relevant_obs_data_point_inds]
+            obs_fq = np.array(training_data_dict['real_fq_data'][data_type]['fq'])[relevant_obs_data_point_inds]
+            obs_error = np.array(training_data_dict['real_fq_data'][data_type]['error'])[relevant_obs_data_point_inds]
+
+            ax = plt.subplot(n_fig_rows, n_fig_cols, i_scale+1)
+#             print('masses: ', masses)
+#             print('fq_preds: ', fq_preds[i_scale])
+            model_handle = ax.plot(masses, fq_preds[i_scale], color=colors[0])
+            obs_errs_handle = ax.errorbar(obs_masses, obs_fq, yerr=obs_error, fmt = 'bo', capsize=5)
+
+            ax.tick_params(labelsize=fontsize)
+
+            ax.set_ylabel('log($[{}])$'.format(unit_dict['SMF']), fontsize=fontsize)
+            ax.set_xlabel('log$_{{10}}([{}])'.format(unit_dict['Stellar_mass']), fontsize=fontsize)
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            if xmin < global_xmin:
+                global_xmin = xmin
+            if xmax > global_xmax:
+                global_xmax = xmax
+            if ymin < global_ymin:
+                global_ymin = ymin
+            if ymax > global_ymax:
+                global_ymax = ymax
+            ax.legend(model_handle, model_names[0], loc='lower left')
+            ax_list.append(ax)
+
+        fig.subplots_adjust(hspace=0, wspace=0)
+
+        for i_ax, ax in enumerate(ax_list):
+
+            # enable upper ticks as well as right ticks
+            ax.tick_params(axis='x', top=True)
+            ax.tick_params(axis='y', right=True)
+            # turn off x-labels for all but the last subplots
+            if (len(ax_list) - (i_ax+1)) > n_fig_cols:   
+                ax.set_xlabel('')
+            if i_ax % n_fig_cols is not 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
+            # set the lims to be the global max/min
+            ax.set_ylim(bottom=global_ymin, top=global_ymax)
+            ax.set_xlim(left=global_xmin, right=global_xmax)
+            # make sure the ticks are on the inside and the numbers are on the outside of the plots
+            ax.tick_params(axis="y",direction="in", pad=10)
+            ax.tick_params(axis="x",direction="in", pad=10)
+            # display redshift bin inside the plots
+#             ax.text(.2, .85, 'log$_{{10}}([{}]) \simeq$ {}'.format(unit_dict['Stellar_mass'], masses_of_lines[i_ax]), fontsize=fontsize, 
+#                     transform = ax.transAxes, horizontalalignment='center') 
+
+    if title is not None:
+        fig.suptitle(title, y=.93, fontsize=20)
+
+    if save:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        fig.savefig(file_path, dpi=dpi)
+        plt.close()
+        plt.clf()
+    else:
+        return fig
     
     
     

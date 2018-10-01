@@ -1035,38 +1035,39 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
     # make the grid 
     min_pred_scale_factor = np.min(scale_factor_of_pred_points)
     max_pred_scale_factor = np.max(scale_factor_of_pred_points)
-    min_pred_stellar_mass = 7 # np.min(stellar_masses_pred_points)
-    max_pred_stellar_mass = 12 # np.max(stellar_masses_pred_points)
+    min_pred_stellar_mass = np.min(stellar_masses_pred_points) # 7
+    max_pred_stellar_mass = np.max(stellar_masses_pred_points) # 12
 
-    if (specific_masses is not None) or (specific_scale_factors is not None) or get_surface:
-        # for surface_plots
-        masses_lin_vals = np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points)
-        scale_factors_lin_vals = np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points)
-        masses_grid_vals, scale_factors_grid_vals = np.meshgrid(masses_lin_vals, scale_factors_lin_vals)
+    
+    masses_lin_vals = np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points)
+    scale_factors_lin_vals = np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points)
+    masses_grid_vals, scale_factors_grid_vals = np.meshgrid(masses_lin_vals, scale_factors_lin_vals)
 
-        grid_shape = masses_grid_vals.shape
+    grid_shape = masses_grid_vals.shape
 
-        grid_vals = spline.ev(masses_grid_vals.flatten(), scale_factors_grid_vals.flatten()) # spline needs a 1d vector
-        grid_vals = np.reshape(grid_vals, grid_shape) # plot_surface needs a grid
+    grid_vals = spline.ev(masses_grid_vals.flatten(), scale_factors_grid_vals.flatten()) # spline needs a 1d vector
+    grid_vals = np.reshape(grid_vals, grid_shape) # plot_surface needs a grid
+#     print(np.max(grid_vals))
+#     print(np.min(grid_vals))
+    
+    if specific_masses is not None:
+        returned_lines_masses = []
+        for mass in specific_masses:
+            mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
+            returned_lines_masses.append(grid_vals[:, mass_ind])
+
+        return [returned_lines_masses, scale_factors_lin_vals]
+
+    if specific_scale_factors is not None:
+        returned_lines_scale_factors = []
+        for scale_factor in specific_scale_factors:
+            scale_ind = np.argmin(np.absolute(scale_factors_lin_vals - scale_factor))
+            returned_lines_scale_factors.append(grid_vals[scale_ind, :])
+
+        return [returned_lines_scale_factors, masses_lin_vals]
         
-        if specific_masses is not None:
-            returned_lines_masses = []
-            for mass in specific_masses:
-                mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
-                returned_lines_masses.append(grid_vals[mass_ind, :])
-                
-            return [returned_lines_masses, scale_factors_lin_vals]
-                
-        if specific_scale_factors is not None:
-            returned_lines_scale_factors = []
-            for mass in specific_masses:
-                mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
-                returned_lines_scale_factors.append(grid_vals[mass_ind, :])
-                
-            return [returned_lines_scale_factors, masses_lin_vals]
-        
-        if get_surface:
-            return [masses_grid_vals, scale_factors_grid_vals, grid_vals]        
+    if get_surface:
+        return [masses_grid_vals, scale_factors_grid_vals, grid_vals]        
 
     # for scatter_plots. Not really used anymore
 #     scatter_scale_factor_vals = []
