@@ -347,6 +347,20 @@ def make_all_data_train(training_data_dict):
                                                                            training_data_dict['original_halo_masses_test']))
         del training_data_dict['original_halo_masses_val']
         del training_data_dict['original_halo_masses_test']
+        
+    if 'val_weights' in training_data_dict.keys():
+        if 'test_weights' in training_data_dict.keys():
+            for key in training_data_dict['train_weights'].keys():
+                training_data_dict['train_weights'][key] = np.concatenate((training_data_dict['train_weights'][key], 
+                                                                           training_data_dict['val_weights'][key], 
+                                                                           training_data_dict['test_weights'][key]))
+            del training_data_dict['val_weights']
+            del training_data_dict['test_weights']
+        else:
+            for key in training_data_dict['train_weights'].keys():
+                training_data_dict['train_weights'][key] = np.concatenate((training_data_dict['train_weights'][key], 
+                                                                      training_data_dict['val_weights'][key]))
+            del training_data_dict['val_weights']
     
     training_data_dict['train_coordinates'] = np.vstack((training_data_dict['train_coordinates'], 
                                                         training_data_dict['val_coordinates'], 
@@ -519,7 +533,7 @@ def get_weights(training_data_dict, output_features, outputs_to_weigh, train_fra
                 
             final_weights.append(weights)
         else:
-            final_weights.append(None)
+            final_weights.append([])
                 
             
 

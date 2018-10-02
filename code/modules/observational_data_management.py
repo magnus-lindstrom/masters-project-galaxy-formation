@@ -933,7 +933,169 @@ def binned_loss(training_data_dict, pred_stellar_masses, bin_feat, statistic, da
     
     
 def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, statistic, data_type, loss_dict, 
-                            grid_points=100, specific_masses=None, specific_scale_factors=None, get_surface=False):
+                            grid_points=100, specific_masses=None, specific_scale_factors=None, get_surface=False, spline_degree=3,
+                            smoothing_factor=0):
+    """
+    Function that returns predicted values of smf, ssfr or fq using bivariate spline functions between predictions.
+    
+    NOTE: One and only one of either 'specific_masses', 'specific_scale_factors' or 'get_surface' needs to be specified. 
+    
+    Arguments
+        training_data_dict -- Need to contain 'unique_redshifts' and 'data_redshifts'.
+        pred_stellar_masses -- The predicted stellar masses of all redshifts in log(stellar_mass/M_sun)
+        bin_feat -- The value to be binned according to stellar mass. 
+                    'ssfr': ssfr[/yr/M_sun], 
+                    'smf': stellar_mass[log(m_star/M_sun)], 
+                    'fq': ssfr[log(/yr/M_sun)], 
+        statistic -- The statistic to return, 'ssfr', 'smf' or 'fq'.
+        data_type -- 'train', 'val' or 'test'. Only 'train' is implemented as of right now.
+        loss_dict -- Dictionary with key 'stellat_mass_bins' specifying what bins to use when binning predicted stellar masses
+    
+    Keyword arguments
+        grid_points -- Number of grid points to use in each dimension when producing a grid with predicted values for 'statistic' 
+                       (default 100)
+        specific_masses -- If the output should be predictions of the statistic for a given mass, specify these masses in a list.
+                           (default None)
+        specific_scale_factors -- Same as specific masses but for scale factors. (default None)
+        get_surface -- Return the entire predicted surface
+
+    """
+
+    scale_factor_of_pred_points = []
+    stellar_masses_pred_points = []
+    pred_bin_feat = []
+
+    for i_red, redshift in enumerate(training_data_dict['unique_redshifts']):
+
+        relevant_inds = training_data_dict['data_redshifts']['{}_data'.format(data_type)] == redshift
+#         print('redshift', redshift, ', nr points for this redshift: ', np.sum(relevant_inds))
+#         print(loss_dict['stellar_mass_bins'])
+#         print('check to see if the binned masses are the same as the binning masses lol:')
+#         print(pred_stellar_masses[relevant_inds])
+#         print(bin_feat[relevant_inds])
+
+#         print('stellar mass bins: ', loss_dict['stellar_mass_bins'])
+        
+        bin_means, bin_edges, bin_numbers = binned_statistic(pred_stellar_masses[relevant_inds], bin_feat[relevant_inds], 
+                                                             bins=loss_dict['stellar_mass_bins'], statistic='mean')
+#         print('bin edges from binned statistic: ', bin_edges)
+        bin_mids = np.array([(bin_edges[i+1] + bin_edges[i])/2 for i in range(len(bin_means))])
+#             if statistic == 'smf':
+#                 print('bin_mids: ', bin_mids)
+#                 print('bin_edges: ', bin_edges)
+
+        if statistic == 'smf':
+            bin_counts = [np.sum(bin_numbers == i) for i in range(1, len(bin_means)+1)]
+            bin_counts = np.array(bin_counts, dtype=np.float)
+            nonzero_inds = np.nonzero(bin_counts)
+#             print('nonzero inds:', nonzero_inds)
+            bin_counts = bin_counts[nonzero_inds]
+#             print('bin mids left: ', bin_mids[nonzero_inds])
+            bin_mids = bin_mids[nonzero_inds]
+
+            bin_widths = bin_edges[1] - bin_edges[0]
+#             print(bin_widths)
+#             print(redshift, 'actual counts in bins: ', bin_counts)
+            pred_bin_feat_dist = bin_counts / 200**3 / bin_widths
+
+#             print(i_red, pred_bin_feat_dist)
+
+            pred_bin_feat_dist = np.log10(pred_bin_feat_dist)
+
+        elif statistic == 'fq':
+
+            scale_factor = 1 / (1 + redshift)
+
+            H_0 = 67.81 / (3.09e19) # 1/s
+            H_0 = H_0 * 60 * 60 * 24 * 365 # 1/yr
+            h_r = H_0 * np.sqrt(1e-3*scale_factor**(-4) + 0.308*scale_factor**(-3) + 0*scale_factor**(-2) + 0.692)
+            ssfr_cutoff = 0.3*h_r
+            log_ssfr_cutoff = np.log10(ssfr_cutoff)
+
+            pred_bin_feat_dist = []
+            nonzero_inds = []
+            print('cutoff: ', log_ssfr_cutoff)
+            for bin_num in range(1, len(bin_means)+1):
+                
+                if len(bin_feat[relevant_inds][bin_numbers == bin_num]) != 0:
+                    print('ssfrs in bin: ', bin_feat[relevant_inds][bin_numbers == bin_num])
+                    fq = np.sum(bin_feat[relevant_inds][bin_numbers == bin_num] < log_ssfr_cutoff) \
+                        / len(bin_feat[relevant_inds][bin_numbers == bin_num])
+                    pred_bin_feat_dist.append(fq)
+                    nonzero_inds.append(bin_num-1)
+            bin_mids = bin_mids[nonzero_inds]
+
+        else: # the third case is ssfr
+            pred_bin_feat_dist = bin_means[np.invert(np.isnan(bin_means))]
+            pred_bin_feat_dist = np.log10(pred_bin_feat_dist)
+
+            bin_mids = bin_mids[np.invert(np.isnan(bin_means))]
+
+        scale_factor_of_pred_points.extend([1 / (1 + redshift)] * len(pred_bin_feat_dist))
+        stellar_masses_pred_points.extend(bin_mids)
+        pred_bin_feat.extend(pred_bin_feat_dist)
+
+    # grid with known values of the surface. first columns is scale factors, second column is stellar mass
+    pred_grid = np.array([scale_factor_of_pred_points, stellar_masses_pred_points]).T 
+
+    return [pred_grid, pred_bin_feat]
+        
+#     # Create the spline function based on predictions
+#     if len(pred_bin_feat) > 16:
+# #             if statistic == 'smf':
+# #                 print('scale_factor_of_pred_points: ', scale_factor_of_pred_points)
+# #                 print('stellar_masses_pred_points: ', stellar_masses_pred_points)
+# #                 print('pred_bin_feat: ', pred_bin_feat)
+#         with warnings.catch_warnings():
+#             with suppress_stdout():
+#                 warnings.simplefilter("ignore")
+#                 spline = SmoothBivariateSpline(stellar_masses_pred_points, scale_factor_of_pred_points, pred_bin_feat, 
+#                                                kx=spline_degree, ky=spline_degree, s=len(stellar_masses_pred_points)/100)
+
+#     # make the grid 
+#     min_pred_scale_factor = np.min(scale_factor_of_pred_points)
+#     max_pred_scale_factor = np.max(scale_factor_of_pred_points)
+#     min_pred_stellar_mass = np.min(stellar_masses_pred_points) # 7
+#     max_pred_stellar_mass = np.max(stellar_masses_pred_points) # 12
+
+    
+#     masses_lin_vals = np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points)
+#     scale_factors_lin_vals = np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points)
+#     masses_grid_vals, scale_factors_grid_vals = np.meshgrid(masses_lin_vals, scale_factors_lin_vals)
+
+#     grid_shape = masses_grid_vals.shape
+
+#     grid_vals = spline.ev(masses_grid_vals.flatten(), scale_factors_grid_vals.flatten()) # spline needs a 1d vector
+#     grid_vals = np.reshape(grid_vals, grid_shape) # plot_surface needs a grid
+# #     print(np.max(grid_vals))
+# #     print(np.min(grid_vals))
+    
+#     if specific_masses is not None:
+#         returned_lines_masses = []
+#         for mass in specific_masses:
+#             mass_ind = np.argmin(np.absolute(masses_lin_vals - mass))
+#             returned_lines_masses.append(grid_vals[:, mass_ind])
+
+#         return [returned_lines_masses, scale_factors_lin_vals]
+
+#     if specific_scale_factors is not None:
+#         returned_lines_scale_factors = []
+#         for scale_factor in specific_scale_factors:
+#             scale_ind = np.argmin(np.absolute(scale_factors_lin_vals - scale_factor))
+#             returned_lines_scale_factors.append(grid_vals[scale_ind, :])
+# #             print('redshift:', data_processing.redshift_from_scale(scale_factor))
+# #             print('scale factor vector returned: ')
+# #             print(grid_vals[scale_ind, :])
+
+#         return [returned_lines_scale_factors, masses_lin_vals]
+        
+#     if get_surface:
+#         return [masses_grid_vals, scale_factors_grid_vals, grid_vals]       
+
+
+def get_ssfr_fq_smf_splines_old(training_data_dict, pred_stellar_masses, bin_feat, statistic, data_type, loss_dict, 
+                            grid_points=100, specific_masses=None, specific_scale_factors=None, get_surface=False, spline_degree=3,
+                            smoothing_factor=0):
     """
     Function that returns predicted values of smf, ssfr or fq using bivariate spline functions between predictions.
     
@@ -1030,7 +1192,8 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
         with warnings.catch_warnings():
             with suppress_stdout():
                 warnings.simplefilter("ignore")
-                spline = SmoothBivariateSpline(stellar_masses_pred_points, scale_factor_of_pred_points, pred_bin_feat)
+                spline = SmoothBivariateSpline(stellar_masses_pred_points, scale_factor_of_pred_points, pred_bin_feat, 
+                                               kx=spline_degree, ky=spline_degree, s=len(stellar_masses_pred_points)/100)
 
     # make the grid 
     min_pred_scale_factor = np.min(scale_factor_of_pred_points)
@@ -1063,25 +1226,14 @@ def get_ssfr_fq_smf_splines(training_data_dict, pred_stellar_masses, bin_feat, s
         for scale_factor in specific_scale_factors:
             scale_ind = np.argmin(np.absolute(scale_factors_lin_vals - scale_factor))
             returned_lines_scale_factors.append(grid_vals[scale_ind, :])
+#             print('redshift:', data_processing.redshift_from_scale(scale_factor))
+#             print('scale factor vector returned: ')
+#             print(grid_vals[scale_ind, :])
 
         return [returned_lines_scale_factors, masses_lin_vals]
         
     if get_surface:
-        return [masses_grid_vals, scale_factors_grid_vals, grid_vals]        
-
-    # for scatter_plots. Not really used anymore
-#     scatter_scale_factor_vals = []
-#     scatter_stellar_mass_vals = []
-#     for i in np.linspace(min_pred_scale_factor, max_pred_scale_factor, num=grid_points):
-#         for j in np.linspace(min_pred_stellar_mass, max_pred_stellar_mass, num=grid_points):
-#             scatter_scale_factor_vals.append(i)
-#             scatter_stellar_mass_vals.append(j)
-#     scatter_pred_vals = spline.ev(scatter_stellar_mass_vals, scatter_scale_factor_vals)
-
-
-
-#     return [scatter_scale_factor_vals, scatter_stellar_mass_vals, scatter_pred_vals, masses_grid_vals, scale_factors_grid_vals,
-#             grid_vals]
+        return [masses_grid_vals, scale_factors_grid_vals, grid_vals]
     
     
 def binned_dist_func(training_data_dict, pred_stellar_masses, bin_feat, statistic, data_type, full_range, real_obs, 
@@ -1467,6 +1619,137 @@ def loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=True, dat
     
     
 def get_lines_from_splined_surface(predicted_points_obj, training_data_dict, statistic, masses=None, scale_factors=None,
+                                   data_type='train', loss_dict=None, n_points=1000, multiple_models=False):
+    """
+    Returns predicted ssfr, fq or smf along at given stellar masss or scale factors.
+    
+    Arguments
+    predicted_points -- The predicted ssfr and stellar mass of one or several models. In the form of numpy array for one model or a 
+                        list of numpy arrays for several models
+    
+    """
+    
+    if masses is None and scale_factors is None:
+        print('Either masses or scale factors have to be provided in a list')
+        return
+    
+    
+#     predicted_points = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, 
+#                                             data_type=data_type)
+
+    if type(predicted_points_obj) is list:
+        list_of_grids = []
+        list_of_grid_vals = []
+        
+        for predicted_points in predicted_points_obj:
+
+            sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+            stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
+            
+            predicted_sfr_log = predicted_points[:, sfr_index]
+            predicted_sfr_log[predicted_sfr_log < -15] = -15
+            predicted_sfr_log[predicted_sfr_log > 15] = 15
+            predicted_sfr = np.power(10, predicted_sfr_log)
+
+            predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
+            predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
+            predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
+            predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+
+            try:
+                ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+            except:
+                print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
+                print('predicted_sfr: ',predicted_sfr)
+                print('predicted_stellar_mass: ', predicted_stellar_mass)
+                sys.exit('overflow error while dividing')
+
+            try:
+                ssfr_log = np.log10(ssfr)
+            except:
+                print(np.dtype(ssfr[0]))
+                print('ssfr: ',ssfr)
+                sys.exit('divide by zero error while taking log')
+
+            ############### mean SSFR ###############
+            if statistic == 'ssfr':
+                grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 
+                                                                         'ssfr', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors) 
+            ############### SMF ###############  
+            if statistic == 'smf':
+                grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
+                                                                         predicted_stellar_mass_log, 'smf', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors)
+            ############### FQ ###############
+            if statistic == 'fq':
+                grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 
+                                                                         'fq', 
+                                                                         data_type, loss_dict, specific_masses=masses, 
+                                                                         specific_scale_factors=scale_factors)
+            list_of_grids.append(grid)
+            list_of_grid_vals.append(grid_vals)
+            
+        return [list_of_grids, list_of_grid_vals]
+    
+    else: # is a numpy array
+        
+        predicted_points = predicted_points_obj
+        
+        sfr_index = training_data_dict['network_args']['output_features'].index('SFR')
+        stellar_mass_index = training_data_dict['network_args']['output_features'].index('Stellar_mass')
+
+        predicted_sfr_log = predicted_points[:, sfr_index]
+        predicted_sfr_log[predicted_sfr_log < -15] = -15
+        predicted_sfr_log[predicted_sfr_log > 15] = 15
+        predicted_sfr = np.power(10, predicted_sfr_log)
+
+        predicted_stellar_mass_log = predicted_points[:, stellar_mass_index]
+        predicted_stellar_mass_log[predicted_stellar_mass_log < -15] = -15
+        predicted_stellar_mass_log[predicted_stellar_mass_log > 15] = 15
+        predicted_stellar_mass = np.power(10, predicted_stellar_mass_log)
+
+        try:
+            ssfr = np.divide(predicted_sfr, predicted_stellar_mass)
+        except:
+            print(np.dtype(predicted_sfr[0]), np.dtype(predicted_stellar_mass[0]))
+            print('predicted_sfr: ',predicted_sfr)
+            print('predicted_stellar_mass: ', predicted_stellar_mass)
+            sys.exit('overflow error while dividing')
+
+        try:
+            ssfr_log = np.log10(ssfr)
+        except:
+            print(np.dtype(ssfr[0]))
+            print('ssfr: ',ssfr)
+            sys.exit('divide by zero error while taking log')
+
+        ############### mean SSFR ###############
+        if statistic == 'ssfr':
+            grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr, 
+                                                      'ssfr', 
+                                                      data_type, loss_dict, specific_masses=masses, 
+                                                      specific_scale_factors=scale_factors) 
+        ############### SMF ###############  
+#         print('nr points going into \'get_ssfr_fq_smf_splines\':' , np.shape(predicted_stellar_mass_log)[0])
+        if statistic == 'smf':
+            grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, 
+                                                                     predicted_stellar_mass_log, 'smf', 
+                                                                     data_type, loss_dict, specific_masses=masses, 
+                                                                     specific_scale_factors=scale_factors)
+        ############### FQ ###############
+        if statistic == 'fq':
+            grid, grid_vals = get_ssfr_fq_smf_splines(training_data_dict, predicted_stellar_mass_log, ssfr_log, 
+                                                                     'fq', 
+                                                                     data_type, loss_dict, specific_masses=masses, 
+                                                                     specific_scale_factors=scale_factors)
+
+        return [grid, grid_vals]
+    
+    
+def get_lines_from_splined_surface_old(predicted_points_obj, training_data_dict, statistic, masses=None, scale_factors=None,
                                    data_type='train', loss_dict=None, n_points=1000, multiple_models=False):
     """
     Returns predicted ssfr, fq or smf along at given stellar masss or scale factors.
