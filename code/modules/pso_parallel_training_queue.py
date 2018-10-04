@@ -13,7 +13,7 @@ from model_setup import *
 from sklearn.metrics import mean_squared_error
 from distance_metrics import minkowski_distance
 from plotting import get_csfrd_plot_obs, get_clustering_plot_obs, get_ssfr_smf_fq_plot_obs, get_ssfr_smf_fq_surface_plot, \
-                     ssfr_emerge_plot
+                     ssfr_emerge_plot, smf_emerge_plot, fq_emerge_plot
 from data_processing import get_weights, predict_points
 from observational_data_management import plots_obs_stats, loss_func_obs_stats
 
@@ -221,6 +221,8 @@ class PSO_Swarm(Feed_Forward_Neural_Network):
 
                 glob_start = time.time()
                 for iteration in range(nr_iterations):
+                    
+#                     print('iteration {:d}, calculating loss...'.format(iteration))
                     
                     self.time_since_train_improvement += 1
                     self.time_since_val_improvement += 1
@@ -654,7 +656,8 @@ def particle_evaluator(inp_queue, results_queue, training_data_dict, reinf_learn
             weight_mat_list = get_weights(dictionary['position'], weight_shapes)
             model.set_weights(weight_mat_list)
             
-            score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, data_type=dictionary['data_type'],
+            score = evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs, 
+                                   data_type=dictionary['data_type'],
                                    loss_dict=loss_dict)
             if dictionary['get_stds']:
                 y_pred = predict_points(model, training_data_dict, original_units=False, data_type=dictionary['data_type'])
@@ -685,7 +688,9 @@ def evaluate_model(model, training_data_dict, reinf_learning, train_on_real_obs,
     
     if reinf_learning:
             
-        score = loss_func_obs_stats(model, training_data_dict, loss_dict, real_obs=train_on_real_obs, data_type=data_type)
+        predicted_points = data_processing.predict_points(model, training_data_dict, original_units=False, as_lists=False, 
+                                                          data_type=data_type)
+        score = loss_func_obs_stats(predicted_points, training_data_dict, loss_dict, real_obs=train_on_real_obs, data_type=data_type)
             
     else:
 
@@ -770,7 +775,7 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
 #             )
             title = None
             predicted_points = predict_points(model, training_data_dict, original_units=False, as_lists=False, 
-                                              data_type=data_type)
+                                              data_type=dictionary['data_type'])
             if 'surf_data' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/surf/iteration_{:d}-{:d}.p'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
@@ -809,6 +814,13 @@ def figure_drawer(queue, model_path, weight_shapes, network_args, training_data_
                 )
                 smf_emerge_plot(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'], 
                                  save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
+            if 'fq_emerge' in dictionary['plots']:
+                file_path = '{}figures_{}_weights/{}_data/all_losses/fq_emerge/iteration_{:d}-{:d}.png'.format(
+                    model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 
+                    dictionary['iteration']
+                )
+                fq_emerge_plot(predicted_points, training_data_dict, title=title, data_type=dictionary['data_type'],
+                               save=True, file_path=file_path, running_from_script=True, loss_dict=loss_dict)
             if 'wp' in dictionary['plots']:
                 file_path = '{}figures_{}_weights/{}_data/all_losses/wp/iteration_{:d}-{:d}.png'.format(
                     model_path, dictionary['data_type'], dictionary['data_type'], dictionary['restart_counter'], 

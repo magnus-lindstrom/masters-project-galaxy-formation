@@ -27,7 +27,8 @@ pretrained_network_name = '5x5_all-points_redshiftsAll_train-test-val080-010-010
 # network_name = '{}'.format(datetime.datetime.now().strftime("%Y-%m-%d"))
 draw_figs = {'train': True, 'val': False} # should figures using the <mode> weights predicting on <mode> data be drawn?
 # Which plots to create while running
-plots = ['csfrd_emerge', 'ssfr_emerge', 'surf_data'] # 'csfrd', 'csfrd_emerge', 'ssfr_emerge', 'wp', 'triple_plot', 'surf_data'
+# Options are 'csfrd', 'csfrd_emerge', 'ssfr_emerge', 'wp', 'triple_plot', 'surf_data'
+plots = ['csfrd_emerge', 'ssfr_emerge', 'smf_emerge', 'fq_emerge', 'wp'] 
 
 ### Loss parameters
 stellar_mass_bin_width = 0.2 # concerns smf, fq, ssfr losses
@@ -43,7 +44,6 @@ loss_dict = {
     'no_coverage_punish': 'exp',
     'no_coverage_factor': 10,
     'min_filled_bin_frac': 0,
-    'nr_redshifts_per_eval': 'all', # a nr or the string 'all'
     'stellar_mass_bins': np.arange(7, 12.5, stellar_mass_bin_width),
     'stellar_mass_bin_width': stellar_mass_bin_width
 }
@@ -58,9 +58,9 @@ pso_args = {
     'inertia_weight_start': 0.5,
     'inertia_weight_min': 0.3,
     'exploration_iters': 200, # nr of iteraions before the pso reaches the min val of the inertia weight
-    'patience': 50, # nr of iterations without improvement on 'patience_parameter' before training is restarted
+    'patience': 60, # nr of iterations without improvement on 'patience_parameter' before training is restarted
     'patience_parameter': 'train',
-    'patience_min_score_increase': 1e-3,
+    'patience_min_score_increase': 1e-4,
     'restart_check_interval': 1e5, # lower to start checking for low stds, not implemented for no val set atm
     'no_validation': True
 }

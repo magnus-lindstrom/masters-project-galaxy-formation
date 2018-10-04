@@ -666,13 +666,34 @@ def get_weights_old(training_data_dict, output_features, outputs_to_weigh, weigh
 
 def chi_squared_loss(predictions, targets, errors):
     
+    if type(predictions) is list:
+        predictions = np.array(predictions)
+    if type(targets) is list:
+        targets = np.array(targets)
+    if type(errors) is list:
+        errors = np.array(errors)
+    
     np.seterr(over='raise')
-    try:
-        loss = np.power(predictions - targets, 2) / np.power(errors, 2)        
-        loss = np.sum(loss) / len(predictions)
-    except:
+    nan_indeces = np.isnan(predictions)
+    nr_nan_vals = np.sum(nan_indeces)
+    tot_nr_vals = len(predictions)
+    
+    frac_nan_values = nr_nan_vals / tot_nr_vals
+    
+    predictions = predictions[np.invert(nan_indeces)]
+    targets = targets[np.invert(nan_indeces)]
+    errors = errors[np.invert(nan_indeces)]
+    
+    if frac_nan_values < .8:
+        try:
+            loss = np.power(predictions - targets, 2) / np.power(errors, 2)        
+            loss = np.sum(loss) / len(predictions)
+        except:
+            loss = 1e400
+    else:
         loss = 1e400
-    return loss
+        
+    return [loss, nr_nan_vals, tot_nr_vals]
 
 
 
